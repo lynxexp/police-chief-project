@@ -1,0 +1,11 @@
+services:
+  police-chief-bot:
+    # Placeholder image ref - this fork has no published registry image yet.
+    # Build locally instead: docker build -t police-chief-bot:latest -f docker/Dockerfile .
+    image: police-chief-bot:latest
+    container_name: police-chief-bot
+    volumes:
+      - /opt/docker/police-chief-bot/db/:/app/db
+    restart: unless-stopped
+    environment:
+      - DISCORD_BOT_TOKEN=<your bot token here>

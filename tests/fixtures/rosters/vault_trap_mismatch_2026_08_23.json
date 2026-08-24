@@ -1,0 +1,24 @@
+{
+  "_comment": "Real alliance roster for the 2026-08-23 Vault Trap OCR mismatch regression fixture (docs/ocr-reference/vault_trap_mismatch_2026-08-23.md). Only the 19 registered members from that hunt -- Verena Scythe, RayuMaximusZA, XXX TARGET, Kazuha Nakamura, tripleH, and C4man are deliberately NOT registered, since the ground truth requires them to land as unmatched/new participants rather than being fuzzy-linked to an unrelated real member.",
+  "members": [
+    {"fid": 70000001, "nick": "LTC"},
+    {"fid": 70000002, "nick": "Lynx"},
+    {"fid": 70000003, "nick": "CP3ECLIPSE"},
+    {"fid": 70000004, "nick": "Jesslyn"},
+    {"fid": 70000005, "nick": "Bake"},
+    {"fid": 70000006, "nick": "Marzienne"},
+    {"fid": 70000007, "nick": "CoolDude1031"},
+    {"fid": 70000008, "nick": "Nightmare"},
+    {"fid": 70000009, "nick": "ChiefFAFO"},
+    {"fid": 70000010, "nick": "applejojo"},
+    {"fid": 70000011, "nick": "John McLane"},
+    {"fid": 70000012, "nick": "misChief"},
+    {"fid": 70000013, "nick": "Ruri"},
+    {"fid": 70000014, "nick": "Jason"},
+    {"fid": 70000015, "nick": "Kimy"},
+    {"fid": 70000016, "nick": "CND"},
+    {"fid": 70000017, "nick": "Pxdro"},
+    {"fid": 67612752866, "nick": "WutZa"},
+    {"fid": 70000019, "nick": "ReddXking"}
+  ]
+}
