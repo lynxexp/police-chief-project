@@ -9,3 +9,32 @@ services:
     restart: unless-stopped
     environment:
       - DISCORD_BOT_TOKEN=<your bot token here>
+
+  police-chief-webapp:
+    # No published registry image yet either - build locally:
+    # docker build -t police-chief-webapp:latest -f webapp/Dockerfile .
+    # (build from the repo root, not from webapp/ -- see webapp/Dockerfile)
+    image: police-chief-webapp:latest
+    container_name: police-chief-webapp
+    volumes:
+      # Same bind mount as police-chief-bot, read+write -- this shared
+      # path is the entire cross-process bridge between the two services;
+      # no networks: block needed, they never talk to each other directly.
+      - /opt/docker/police-chief-bot/db/:/app/db
+      # This service's own data (sessions, OAuth tokens) -- separate
+      # volume so it isn't wiped by anything touching the bot's db/.
+      - /opt/docker/police-chief-bot/webapp-db/:/app/webapp/backend/db
+    restart: unless-stopped
+    environment:
+      - DISCORD_CLIENT_ID=<from the existing Discord app>
+      - DISCORD_CLIENT_SECRET=<new OAuth2 client secret, same Discord app>
+      - DISCORD_BOT_TOKEN=<same bot token, for the /channels lookup>
+      - DISCORD_REDIRECT_URI=http://localhost:3000/api/auth/callback
+      - SESSION_SECRET=<generate once, keep stable -- e.g. `openssl rand -base64 32`>
+      - TRUST_PROXY=false
+    ports:
+      # Loopback-only for now: host-reachable, not internet-reachable.
+      # See webapp/backend/src/config.ts's trustProxy doc comment for the
+      # exact steps to flip this over once a reverse proxy (Caddy) is
+      # actually in front of this service.
+      - "127.0.0.1:3000:3000"

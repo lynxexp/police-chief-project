@@ -10,6 +10,8 @@ Discord Bot written in Python for managing alliances in *Police Chief* (Android 
 - **[User Guide](docs/user-guide.md)** — for regular alliance members: registering, checking your stats, uploading screenshots.
 - **[Admin Guide](docs/admin-guide.md)** — for alliance/server/global admins: settings, permissions, tracking channels, gift codes, scheduling.
 - **[Owner Guide](docs/owner-guide.md)** — the small set of bot-owner-only actions: transferring ownership, backup/restore.
+- **[Web Dashboard Guide](docs/webapp-guide.md)** — optional companion web dashboard: browser views of alliance stats, an event calendar, and admin tools. Not required — everything works from Discord alone.
+- **[Web Dashboard Deployment](docs/webapp-deployment.md)** — running the optional web dashboard alongside the bot.
 
 ## Features
 
@@ -54,6 +56,11 @@ Discord Bot written in Python for managing alliances in *Police Chief* (Android 
 - **Backup & restore** — on-demand local or Discord-DM database backups, optionally
   password-protected, plus a validated `/restore` flow (Bot Owner only) with an
   automatic safety backup before anything's overwritten.
+- **Web dashboard** *(optional add-on, not required)* — a browser companion covering
+  alliance stats, leaderboards, attendance, a browsable event calendar, and admin tools
+  (notifications, custom events, theming, permissions, backups) as an alternative to the
+  equivalent Discord commands. Everything above works fully without it. See the
+  [Web Dashboard Guide](docs/webapp-guide.md).
 
 ## Getting Started
 
