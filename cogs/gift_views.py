@@ -558,9 +558,14 @@ class CreateGiftCodeModal(discord.ui.Modal):
             if row:
                 # Exists but inactive (previously marked expired / hard-recreated) - reactivate.
                 reactivated = True
+                # announced_by_bot = 1: this reactivation announces
+                # synchronously below, same as a fresh insert -- without this,
+                # a code that was web-added (announced_by_bot=0) and then
+                # deactivated before the polling loop caught it would get
+                # announced a second time by that loop.
                 self.cog.cursor.execute(
                     "UPDATE gift_codes SET is_active = 1, note = ?, expiry_date = ?, "
-                    "created_by = ? WHERE giftcode = ?",
+                    "created_by = ?, announced_by_bot = 1 WHERE giftcode = ?",
                     (note, expiry_date, interaction.user.id, code)
                 )
             else:

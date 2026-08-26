@@ -3,9 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
 import { getAdminGiftCodes, addGiftCode, updateGiftCode } from "../api/client";
 
-/** Global/Owner only, server-gated -- adding/deactivating a code updates
- * the table only, it does NOT trigger a live Discord announcement (see
- * routes/giftcodes.ts's doc comment). Per-alliance announcement channel
+/** Global/Owner only, server-gated -- adding a code here gets announced to
+ * Discord within about a minute by the bot's own polling loop (see
+ * routes/giftcodes.ts's doc comment); deactivating/editing an existing code
+ * is DB-only and never re-announces. Per-alliance announcement channel
  * lives on the Channel setup page instead, since that's alliance-scoped
  * and this is global. */
 const todayIso = new Date().toISOString().slice(0, 10);

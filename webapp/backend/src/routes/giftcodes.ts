@@ -1,12 +1,13 @@
 /**
  * Gift codes -- Phase 2. The member-facing "current codes" list plus
  * admin management of the code list and each alliance's announcement
- * channel. Deliberately does NOT trigger a live Discord announcement --
- * the bot's own `announce_new_code()` fires synchronously from its
- * Discord command handler, there's no DB-polling loop watching
- * `gift_codes` the way Notifications has one. A web-added code updates
- * the table; announcing it still requires the bot's own /addcode command
- * for now (see the Phase 2 plan doc's Architecture decisions).
+ * channel. This app never posts to Discord directly (no bot-token calls
+ * live here) -- instead, a new code is inserted with announced_by_bot=0,
+ * and the bot's own gift_operations.py::check_web_added_codes_loop() polls
+ * for that and posts the announcement within ~60s, using the exact same
+ * announce_new_code() the /addcode command uses. Editing/deactivating an
+ * existing code from here is DB-only and never re-announces, matching how
+ * the bot's own edit flow behaves.
  *
  * Code management (add/deactivate/edit) is Global/Owner-only: a code
  * isn't scoped to one alliance, it fans out to every alliance's
@@ -136,6 +137,9 @@ export default async function giftCodeRoutes(fastify: FastifyInstance): Promise<
           expiry_date: expiryDate ?? null,
           is_active: 1,
           created_by: ctx.discordId,
+          // Signals check_web_added_codes_loop() to announce this one --
+          // see this file's doc comment.
+          announced_by_bot: 0,
         })
         .execute();
 

@@ -482,8 +482,9 @@ export function transferOwnership(targetId: string): Promise<{ ok: true }> {
 }
 
 // ---------------------------------------------------------------------------
-// Gift codes (see routes/giftcodes.ts). Adding/editing a code does NOT
-// trigger a live Discord announcement -- see that file's doc comment.
+// Gift codes (see routes/giftcodes.ts). Adding a new code gets announced to
+// Discord by the bot's own polling loop within about a minute; editing an
+// existing one is DB-only -- see that file's doc comment.
 // ---------------------------------------------------------------------------
 
 export interface GiftCode {

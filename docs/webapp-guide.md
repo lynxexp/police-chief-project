@@ -176,11 +176,16 @@ expiry date is automatically hidden from the member-facing list even if
 still marked active, and the admin table flags this with an
 **(expired, hidden from members)** note so it doesn't look like a bug.
 
-Adding or deactivating a code here **does not** post a Discord announcement
-— that still requires the bot's own `/addcode` command in Discord. This
-page only manages the code list itself; see
-[Admin Guide → Gift codes](admin-guide.md#gift-codes) for the announcement
-side.
+**Adding** a code here posts the same Discord announcement `/addcode` would
+— the bot checks for web-added codes about once a minute and announces any
+it finds to every alliance's configured gift code channel, so there's
+normally a short delay (well under a minute) between adding a code here and
+seeing it posted in Discord. **Deactivating**, **reactivating**, or editing
+an existing code's note/expiry from here is DB-only and never posts a new
+announcement — only a brand-new code triggers one, matching how repeated
+edits in Discord don't re-announce either. See
+[Admin Guide → Gift codes](admin-guide.md#gift-codes) for the Discord-side
+announcement command.
 
 ### Backups
 

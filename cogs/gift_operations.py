@@ -6,7 +6,7 @@ gift_channels and gift_views for the heavy lifting.
 """
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import sqlite3
 import os
 import logging
@@ -68,6 +68,15 @@ class GiftOperations(commands.Cog):
             # Legacy column. No longer
             # read or written anywhere - left in place rather than dropped.
             "ALTER TABLE gift_codes ADD COLUMN validation_status TEXT DEFAULT 'pending'",
+            # Tracks whether announce_new_code() has already been run for this
+            # row. DEFAULT 1 so every pre-existing row (and every future
+            # /addcode insert, which announces synchronously and doesn't
+            # specify this column) is treated as "already handled" -- only the
+            # web dashboard's add-code endpoint explicitly inserts 0, which is
+            # what check_web_added_codes_loop() below polls for. Without this
+            # default, adding the column would make check_web_added_codes_loop
+            # re-announce every code ever added the first time it runs.
+            "ALTER TABLE gift_codes ADD COLUMN announced_by_bot INTEGER DEFAULT 1",
         ):
             try:
                 self.cursor.execute(ddl)
@@ -125,6 +134,59 @@ class GiftOperations(commands.Cog):
             self.logger.exception(f"DATABASE ERROR during on_ready setup: {db_err}")
         except Exception as e:
             self.logger.exception(f"UNEXPECTED ERROR during on_ready setup: {e}")
+
+        if not self.check_web_added_codes_loop.is_running():
+            self.check_web_added_codes_loop.start()
+
+    # ── Web dashboard integration ───────────────────────────────────────
+    #
+    # The web dashboard's own gift-code endpoint (webapp/backend/src/routes/
+    # giftcodes.ts) writes directly to gift_codes -- there's no IPC channel
+    # between the two processes, so a code added there has no way to trigger
+    # an announcement synchronously the way /addcode's modal does. This loop
+    # is the bridge: it polls for rows the web inserted (announced_by_bot=0)
+    # and announces them exactly like a Discord-added code would, then marks
+    # them handled so they're never announced twice.
+
+    @tasks.loop(seconds=60)
+    async def check_web_added_codes_loop(self):
+        try:
+            self.cursor.execute(
+                "SELECT giftcode, note, expiry_date, created_by FROM gift_codes "
+                "WHERE is_active = 1 AND (announced_by_bot = 0 OR announced_by_bot IS NULL)"
+            )
+            pending = self.cursor.fetchall()
+        except sqlite3.Error as db_err:
+            self.logger.exception(f"DATABASE ERROR reading pending web gift codes: {db_err}")
+            return
+
+        for giftcode, note, expiry_date, created_by in pending:
+            added_by = self.bot.get_user(created_by) if created_by else None
+            try:
+                posted, total, failed = await gift_channels.announce_new_code(
+                    self, giftcode, note, expiry_date, added_by
+                )
+                self.logger.info(
+                    f"Announced web-added gift code '{giftcode}' to {posted}/{total} channel(s)"
+                    f"{f' ({len(failed)} failed)' if failed else ''}."
+                )
+            except Exception as e:
+                self.logger.exception(f"Error announcing web-added gift code '{giftcode}': {e}")
+                continue
+
+            try:
+                self.cursor.execute(
+                    "UPDATE gift_codes SET announced_by_bot = 1 WHERE giftcode = ?", (giftcode,)
+                )
+                self.conn.commit()
+            except sqlite3.Error as db_err:
+                self.logger.exception(
+                    f"DATABASE ERROR marking gift code '{giftcode}' as announced: {db_err}"
+                )
+
+    @check_web_added_codes_loop.before_loop
+    async def before_check_web_added_codes_loop(self):
+        await self.bot.wait_until_ready()
 
     # ── Menu entry point ──────────────────────────────────────────────
 
