@@ -65,6 +65,25 @@ class NotificationWizard(commands.Cog):
                 created_at TEXT
             )
         """)
+
+        # template_id existed briefly (linking an event to a
+        # notification_templates row) and was removed after the templates
+        # feature itself was eliminated as too confusing alongside Custom
+        # Events -- the column may still physically exist on an
+        # already-migrated db/events.sqlite, but nothing reads or writes it
+        # anymore. Left in place rather than dropped (SQLite DROP COLUMN
+        # support is version-dependent); harmless dead weight.
+
+        # Whether this event posts Discord reminders at all -- DEFAULT 1 so
+        # every pre-existing event keeps behaving exactly as before this
+        # column existed. OFF means the event is calendar-only: no channel,
+        # no reminders, nothing materialized into vault_notifications, but
+        # still visible on the web dashboard's member-facing calendar.
+        try:
+            self.cursor.execute("SELECT notifications_enabled FROM custom_events LIMIT 1")
+        except sqlite3.OperationalError:
+            self.cursor.execute("ALTER TABLE custom_events ADD COLUMN notifications_enabled INTEGER DEFAULT 1")
+
         self.conn.commit()
 
     async def cog_unload(self):
@@ -105,7 +124,7 @@ class NotificationWizard(commands.Cog):
     def get_custom_event(self, event_id: int) -> dict | None:
         self.cursor.execute("""
             SELECT id, guild_id, name, icon_url, first_occurrence, recurrence_type,
-                   recurrence_interval, reminder_offsets, channel_id, created_by
+                   recurrence_interval, reminder_offsets, channel_id, created_by, notifications_enabled
             FROM custom_events WHERE id = ?
         """, (event_id,))
         row = self.cursor.fetchone()
@@ -115,6 +134,9 @@ class NotificationWizard(commands.Cog):
             "id": row[0], "guild_id": row[1], "name": row[2], "icon_url": row[3],
             "first_occurrence": row[4], "recurrence_type": row[5], "recurrence_interval": row[6],
             "reminder_offsets": row[7], "channel_id": row[8], "created_by": row[9],
+            # NULL (pre-migration rows) means "on", matching the column's
+            # own DEFAULT 1 for everything created after the migration.
+            "notifications_enabled": row[10] is None or bool(row[10]),
         }
 
     async def save_custom_event(self, session: "CustomEventSession") -> int:
@@ -123,76 +145,92 @@ class NotificationWizard(commands.Cog):
         single vault_notifications row via NotificationSystem's generic
         save_notification()/delete_notification() API, keyed to the
         admin-defined event rather than a fixed event name.
+
+        When session.notifications_enabled is False, the event is
+        calendar-only: no channel/mention/reminders, and any previously
+        materialized notification is dropped without a replacement. The web
+        dashboard's member-facing calendar computes this event's occurrences
+        directly from its recurrence fields in that case, since there's no
+        notification history to derive them from.
         """
         now_iso = datetime.now(pytz.UTC).isoformat()
         first_occurrence_iso = session.first_occurrence.isoformat()
-        offsets_json = json.dumps(sorted(session.reminder_offsets(), reverse=True))
+        offsets = session.reminder_offsets() if session.notifications_enabled else []
+        offsets_json = json.dumps(sorted(offsets, reverse=True))
+        notifications_enabled_int = 1 if session.notifications_enabled else 0
 
         if session.editing_id:
             self.cursor.execute("""
                 UPDATE custom_events
                 SET name = ?, icon_url = ?, first_occurrence = ?, recurrence_type = ?,
-                    recurrence_interval = ?, reminder_offsets = ?, channel_id = ?
+                    recurrence_interval = ?, reminder_offsets = ?, channel_id = ?,
+                    notifications_enabled = ?
                 WHERE id = ?
             """, (
                 session.name, session.icon_url, first_occurrence_iso, session.recurrence_type,
-                session.recurrence_interval, offsets_json, session.channel_id, session.editing_id
+                session.recurrence_interval, offsets_json,
+                session.channel_id if session.notifications_enabled else None,
+                notifications_enabled_int, session.editing_id
             ))
             event_id = session.editing_id
         else:
             self.cursor.execute("""
                 INSERT INTO custom_events
                 (guild_id, name, icon_url, first_occurrence, recurrence_type, recurrence_interval,
-                 reminder_offsets, channel_id, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 reminder_offsets, channel_id, created_by, created_at, notifications_enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 session.guild_id, session.name, session.icon_url, first_occurrence_iso,
                 session.recurrence_type, session.recurrence_interval, offsets_json,
-                session.channel_id, session.user_id, now_iso
+                session.channel_id if session.notifications_enabled else None,
+                session.user_id, now_iso, notifications_enabled_int
             ))
             event_id = self.cursor.lastrowid
         self.conn.commit()
 
         notif_cog = self.bot.get_cog("NotificationSystem")
         if notif_cog:
-            # Drop any previously materialized reminder row(s) for this event, then recreate
-            # (simplest way to keep the reminder in sync with edited name/date/recurrence/offsets).
+            # Drop any previously materialized reminder row(s) for this event
+            # -- unconditionally, since an edit might have just turned
+            # notifications off (or changed date/recurrence/offsets, the
+            # existing reason this delete-then-maybe-recreate already ran).
             self.cursor.execute("SELECT id FROM vault_notifications WHERE custom_event_id = ?", (event_id,))
             for (old_id,) in self.cursor.fetchall():
                 await notif_cog.delete_notification(old_id)
 
-            now_utc = datetime.now(pytz.UTC)
-            next_occ = calculate_next_occurrence(
-                session.first_occurrence, session.recurrence_type, session.recurrence_interval,
-                from_date=now_utc
-            )
-            offsets = sorted(session.reminder_offsets(), reverse=True)
-            times_str = "-".join(str(o) for o in offsets)
-            description = f"CUSTOM_TIMES:{times_str}|%i **%n** starts in %t!"
+            if session.notifications_enabled:
+                now_utc = datetime.now(pytz.UTC)
+                next_occ = calculate_next_occurrence(
+                    session.first_occurrence, session.recurrence_type, session.recurrence_interval,
+                    from_date=now_utc
+                )
+                sorted_offsets = sorted(offsets, reverse=True)
+                times_str = "-".join(str(o) for o in sorted_offsets)
+                description = f"CUSTOM_TIMES:{times_str}|%i **%n** starts in %t!"
 
-            if session.recurrence_type == "daily":
-                repeat_minutes = max(1, session.recurrence_interval) * 1440
-            elif session.recurrence_type == "weekly":
-                repeat_minutes = max(1, session.recurrence_interval) * 7 * 1440
-            else:  # monthly - not a fixed period, advanced via calculate_next_occurrence instead
-                repeat_minutes = -2
+                if session.recurrence_type == "daily":
+                    repeat_minutes = max(1, session.recurrence_interval) * 1440
+                elif session.recurrence_type == "weekly":
+                    repeat_minutes = max(1, session.recurrence_interval) * 7 * 1440
+                else:  # monthly - not a fixed period, advanced via calculate_next_occurrence instead
+                    repeat_minutes = -2
 
-            await notif_cog.save_notification(
-                guild_id=session.guild_id,
-                channel_id=session.channel_id,
-                start_date=next_occ,
-                hour=next_occ.hour,
-                minute=next_occ.minute,
-                timezone="UTC",
-                description=description,
-                created_by=session.user_id,
-                notification_type=6,
-                mention_type=session.mention_type or "none",
-                repeat_enabled=True,
-                repeat_minutes=repeat_minutes,
-                event_type=session.name,
-                custom_event_id=event_id,
-            )
+                await notif_cog.save_notification(
+                    guild_id=session.guild_id,
+                    channel_id=session.channel_id,
+                    start_date=next_occ,
+                    hour=next_occ.hour,
+                    minute=next_occ.minute,
+                    timezone="UTC",
+                    description=description,
+                    created_by=session.user_id,
+                    notification_type=6,
+                    mention_type=session.mention_type or "none",
+                    repeat_enabled=True,
+                    repeat_minutes=repeat_minutes,
+                    event_type=session.name,
+                    custom_event_id=event_id,
+                )
 
         return event_id
 
@@ -275,6 +313,11 @@ class CustomEventSession:
         self.notification_type = None  # e.g., 1, 2, 3, 4, 5, 6 (custom)
         self.custom_times = None  # For notification_type 6
         self.timezone = "UTC"
+
+        # Off means this event is calendar-only -- no channel/mention/
+        # reminders, nothing materialized into vault_notifications. See
+        # CustomEventDetailsHubView's toggle and save_custom_event().
+        self.notifications_enabled = True
 
     def load_existing_notifications(self, channel_id: int):
         """
@@ -398,7 +441,8 @@ class CommonSettingsHubView(discord.ui.View):
                 "- Specify a channel where you want the reminders to appear.\n\n"
                 "**You might also want to adjust:**\n"
                 "- Who gets mentioned in the reminder. No mention by default.\n"
-                "- How far ahead of the event to remind people. 10m and 5m before and at the event time by default.\n\n"
+                "- How far ahead of the event to remind people. 10m and 5m before and at the event "
+                "time by default.\n\n"
                 "**Settings:**\n"
                 f"{theme.pinIcon} **Channel:** {channel_status}{channel_name}\n"
                 f"{theme.announceIcon} **Mention:** {mention_status}{mention_desc}\n"
@@ -496,15 +540,23 @@ class CommonSettingsHubView(discord.ui.View):
         await view.show(interaction)
 
     async def continue_to_events(self, interaction: discord.Interaction):
-        """Save the custom event and materialize its reminder"""
+        """Save the custom event and materialize its reminder (or lack of one)."""
         event_id = await self.cog.save_custom_event(self.session)
+
+        if self.session.notifications_enabled:
+            offsets = self.session.reminder_offsets()
+            settings_lines = (
+                f"{theme.pinIcon} **Channel:** <#{self.session.channel_id}>\n"
+                f"{theme.timeIcon} **Reminders:** {', '.join(str(o) for o in sorted(offsets, reverse=True))} minute(s) before\n"
+            )
+        else:
+            settings_lines = f"{theme.settingsIcon} **Notifications:** Off -- calendar-only, no Discord reminders\n"
 
         embed = discord.Embed(
             title=f"{theme.verifiedIcon} Event Saved",
             description=(
                 f"**{self.session.name}** has been saved to this server's event calendar.\n\n"
-                f"{theme.pinIcon} **Channel:** <#{self.session.channel_id}>\n"
-                f"{theme.timeIcon} **Reminders:** {', '.join(str(o) for o in sorted(self.session.reminder_offsets(), reverse=True))} minute(s) before\n\n"
+                f"{settings_lines}\n"
                 "Run the wizard again any time to create another event, or to edit/delete this one."
             ),
             color=theme.emColor3
@@ -878,6 +930,11 @@ class CustomEventDetailsHubView(discord.ui.View):
             recur_status = f"{theme.verifiedIcon} {s.recurrence_type.capitalize()}, every {s.recurrence_interval}"
         else:
             recur_status = f"{theme.warnIcon} Required"
+        notif_toggle_status = (
+            f"{theme.verifiedIcon} On -- set a channel and reminder times next"
+            if s.notifications_enabled
+            else f"{theme.settingsIcon} Off -- calendar-only, no Discord reminders"
+        )
 
         embed = discord.Embed(
             title=f"{theme.wizardIcon} " + ("Edit Custom Event" if s.is_update else "New Custom Event"),
@@ -889,9 +946,11 @@ class CustomEventDetailsHubView(discord.ui.View):
                 f"{theme.timeIcon} **First Occurrence (UTC):** {date_status}\n"
                 f"{theme.refreshIcon} **Recurrence:** {recur_status}\n\n"
                 "**Optional:**\n"
-                f"{theme.calendarIcon} **Icon:** {icon_status}\n\n"
+                f"{theme.calendarIcon} **Icon:** {icon_status}\n"
+                f"{theme.announceIcon} **Notifications:** {notif_toggle_status}\n\n"
                 "Click the buttons below to configure each field.\n"
-                "When ready, click **Continue** to set reminders and a channel."
+                "When ready, click **Continue**"
+                + (" to set reminders and a channel." if s.notifications_enabled else " to save.")
             ),
             color=theme.emColor1
         )
@@ -926,16 +985,25 @@ class CustomEventDetailsHubView(discord.ui.View):
         recur_button.callback = self.set_recurrence
         self.add_item(recur_button)
 
+        notif_toggle_button = discord.ui.Button(
+            label="Turn Notifications Off" if s.notifications_enabled else "Turn Notifications On",
+            emoji=f"{theme.announceIcon}",
+            style=discord.ButtonStyle.secondary, row=2
+        )
+        notif_toggle_button.callback = self.toggle_notifications
+        self.add_item(notif_toggle_button)
+
         can_continue = bool(s.name and s.first_occurrence and s.recurrence_type)
         continue_button = discord.ui.Button(
-            label="Continue", emoji=f"{theme.forwardIcon}",
-            style=discord.ButtonStyle.primary, disabled=not can_continue, row=2
+            label="Continue" if s.notifications_enabled else "Save Event",
+            emoji=f"{theme.forwardIcon}" if s.notifications_enabled else f"{theme.verifiedIcon}",
+            style=discord.ButtonStyle.primary, disabled=not can_continue, row=3
         )
         continue_button.callback = self.continue_to_settings
         self.add_item(continue_button)
 
         cancel_button = discord.ui.Button(
-            label="Cancel", emoji=f"{theme.deniedIcon}", style=discord.ButtonStyle.secondary, row=2
+            label="Cancel", emoji=f"{theme.deniedIcon}", style=discord.ButtonStyle.secondary, row=3
         )
         cancel_button.callback = self.cancel
         self.add_item(cancel_button)
@@ -958,7 +1026,18 @@ class CustomEventDetailsHubView(discord.ui.View):
         view = CustomEventRecurrenceView(self.cog, self.session, self)
         await view.show(interaction)
 
+    async def toggle_notifications(self, interaction: discord.Interaction):
+        self.session.notifications_enabled = not self.session.notifications_enabled
+        await self.show(interaction)
+
     async def continue_to_settings(self, interaction: discord.Interaction):
+        if not self.session.notifications_enabled:
+            # Nothing left to configure -- no channel/mention/reminders for
+            # a calendar-only event. Save directly instead of visiting
+            # CommonSettingsHubView, which is entirely about those settings.
+            view = CommonSettingsHubView(self.cog, self.session)
+            await view.continue_to_events(interaction)
+            return
         view = CommonSettingsHubView(self.cog, self.session)
         await view.show(interaction)
 
@@ -1172,6 +1251,7 @@ class CustomEventManageSelectView(discord.ui.View):
         session.recurrence_type = row["recurrence_type"]
         session.recurrence_interval = row["recurrence_interval"]
         session.channel_id = row["channel_id"]
+        session.notifications_enabled = row["notifications_enabled"]
         try:
             offsets = json.loads(row["reminder_offsets"]) if row["reminder_offsets"] else [10, 5, 0]
         except (ValueError, TypeError):
@@ -1242,8 +1322,8 @@ class CustomEventSelectDropdown(discord.ui.Select):
 
 
 class CustomEventDeleteConfirmView(discord.ui.View):
-    """Confirmation view for deleting a custom event, mirroring the
-    templates cog's ResetConfirmView Yes/No pattern."""
+    """Confirmation view for deleting a custom event, a plain Yes/No
+    pattern."""
     def __init__(self, cog: NotificationWizard, row: dict):
         super().__init__(timeout=60)
         self.cog = cog

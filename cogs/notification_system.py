@@ -309,6 +309,15 @@ class NotificationSystem(commands.Cog):
             )
         """)
 
+        # Whether this event posts Discord reminders at all -- see
+        # notification_wizard.py's identical migration for the full
+        # explanation -- both cogs defensively ensure this table's schema,
+        # same as the CREATE TABLE above.
+        try:
+            self.cursor.execute("SELECT notifications_enabled FROM custom_events LIMIT 1")
+        except sqlite3.OperationalError:
+            self.cursor.execute("ALTER TABLE custom_events ADD COLUMN notifications_enabled INTEGER DEFAULT 1")
+
         # Message deletion settings
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS vault_trap_settings (
@@ -1629,9 +1638,6 @@ class NotificationSystem(commands.Cog):
                     f"└ Create live schedule boards that display upcoming notifications\n"
                     f"└ Auto-updates when notifications are created, edited, or deleted\n"
                     f"└ Supports server-wide or per-channel boards with customizable settings\n\n"
-                    f"{theme.documentIcon} **Event Templates**\n"
-                    f"└ Browse pre-built event templates\n"
-                    f"└ View and modify default notification designs\n\n"
                     f"{theme.settingsIcon} **Settings**\n"
                     f"└ Configure whether posted notifications are auto-deleted\n"
                     f"└ Set the default time after which notifications are deleted\n\n"
@@ -2075,8 +2081,8 @@ class EmbedEditorView(discord.ui.View):
 
             embed = discord.Embed(color=self.embed_data.get("color", discord.Color.blue().value))
 
-            # Guard on value, not key presence: author/mention default to None and
-            # a loaded template can store NULL fields, which would break .replace().
+            # Guard on value, not key presence: author/mention default to None,
+            # which would break .replace().
             if self.embed_data.get("title"):
                 embed.title = replace_variables(self.embed_data["title"])
             if self.embed_data.get("description"):
@@ -2356,10 +2362,9 @@ class MessageTypeView(discord.ui.View):
             embed = discord.Embed(
                 title=f"{theme.listIcon} Select Event Type",
                 description=(
-                    "Select an event type to use its template, "
-                    "or leave **Custom** for the default values.\n\n"
-                    "Templates will pre-fill the embed editor with title, description, "
-                    "and images from the selected event's template."
+                    "Select an event type, or leave **Custom** for the default values.\n\n"
+                    "This only sets the icon and label used in the preview below -- "
+                    "you still fill in the embed's own title, description, and images."
                 ),
                 color=theme.emColor1
             )
@@ -2444,40 +2449,16 @@ class EventTypeSelectView(discord.ui.View):
     @discord.ui.button(label="Continue", style=discord.ButtonStyle.primary, emoji=f"{theme.nextIcon}", row=1)
     async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            # Get template data if an event type was selected
-            template_data = None
-            if self.selected_event_type:
-                # Get templates cog to fetch template defaults
-                templates_cog = self.cog.bot.get_cog("NotificationTemplates")
-                if templates_cog:
-                    # Get templates for this event type
-                    templates = templates_cog.get_templates_by_event_type(self.selected_event_type)
-                    if templates:
-                        # Get full template data using the first template's ID
-                        template_data = templates_cog.get_template(templates[0]["template_id"])
-
-            # Build default embed data
-            if template_data:
-                embed_data = {
-                    "title": template_data.get("embed_title") or f"{self.selected_event_type} Notification",
-                    "description": template_data.get("embed_description") or f"Get ready for {self.selected_event_type}! Only %t remaining.",
-                    "color": int(template_data.get("embed_color") or 0x3498db),
-                    "footer": template_data.get("footer") or "Notification System",
-                    "author": template_data.get("author"),
-                    "mention_message": template_data.get("mention_message"),
-                    "image_url": template_data.get("embed_image_url") or "",
-                    "thumbnail_url": template_data.get("embed_thumbnail_url") or ""
-                }
-            else:
-                # Default custom embed
-                embed_data = {
-                    "title": "Custom Notification",
-                    "description": "Get ready! Only %t remaining.",
-                    "color": discord.Color.blue().value,
-                    "footer": "Notification System",
-                    "author": None,
-                    "mention_message": None
-                }
+            # Default embed data -- event type only drives the icon/label
+            # used in the preview below, not any stored content.
+            embed_data = {
+                "title": f"{self.selected_event_type} Notification" if self.selected_event_type else "Custom Notification",
+                "description": f"Get ready for {self.selected_event_type}! Only %t remaining." if self.selected_event_type else "Get ready! Only %t remaining.",
+                "color": discord.Color.blue().value,
+                "footer": "Notification System",
+                "author": None,
+                "mention_message": None
+            }
 
             # Sample values for preview
             example_time = "30 minutes"
@@ -2515,7 +2496,7 @@ class EventTypeSelectView(discord.ui.View):
                 f"**Preview values:** {example_emoji} {example_name} at {example_event_time} on {example_date}, {example_time} remaining"
             )
 
-            # Create embed editor view with event_type and template_data
+            # Create embed editor view with the selected event_type
             view = EmbedEditorView(
                 self.cog,
                 self.start_date,
@@ -2576,7 +2557,7 @@ class EventTypeDropdown(discord.ui.Select):
                 label=event_type,
                 value=event_type,
                 emoji=icon,
-                description=f"Use {event_type} template"
+                description=f"Use the {event_type} icon and label"
             ))
 
         super().__init__(
@@ -4170,33 +4151,6 @@ class VaultTrapView(discord.ui.View):
             traceback.print_exc()
             await interaction.response.send_message(
                 f"{theme.deniedIcon} An error occurred while loading schedule boards!",
-                ephemeral=True
-            )
-
-    @discord.ui.button(
-        label="Event Templates",
-        emoji=f"{theme.documentIcon}",
-        style=discord.ButtonStyle.primary,
-        custom_id="browse_templates",
-        row=1
-    )
-    async def notification_templates_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self.cog.check_admin(interaction):
-            return
-        try:
-            templates_cog = self.cog.bot.get_cog("NotificationTemplates")
-            if templates_cog:
-                await templates_cog.show_templates(interaction)
-            else:
-                await interaction.response.send_message(
-                    f"{theme.deniedIcon} Notification Templates module not found.",
-                    ephemeral=True
-                )
-        except Exception as e:
-            logger.error(f"Error loading templates: {e}")
-            print(f"Error loading templates: {e}")
-            await interaction.response.send_message(
-                f"{theme.deniedIcon} An error occurred while loading templates.",
                 ephemeral=True
             )
 

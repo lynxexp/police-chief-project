@@ -118,7 +118,7 @@ export function toNaiveSqliteTimestamp(date: Date): string {
  * Normalizes a stored timestamp to an unambiguous, explicitly-UTC ISO
  * string. Several columns across events.sqlite rely on SQLite's bare
  * `DEFAULT CURRENT_TIMESTAMP` (vault_notifications.created_at,
- * notification_history.sent_at, notification_templates.created_at) --
+ * notification_history.sent_at, custom_events.created_at) --
  * these come back as naive "YYYY-MM-DD HH:MM:SS" strings (space-
  * separated, no offset), and the Python source's own comment confirms
  * the intent: "sent_at is stored as UTC wall time - compare in UTC, not

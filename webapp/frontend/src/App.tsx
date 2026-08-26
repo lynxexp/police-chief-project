@@ -24,9 +24,6 @@ import AdminNotificationDetail from "./pages/AdminNotificationDetail";
 import AdminCustomEvents from "./pages/AdminCustomEvents";
 import AdminCustomEventCreate from "./pages/AdminCustomEventCreate";
 import AdminCustomEventDetail from "./pages/AdminCustomEventDetail";
-import AdminTemplates from "./pages/AdminTemplates";
-import AdminTemplateCreate from "./pages/AdminTemplateCreate";
-import AdminTemplateDetail from "./pages/AdminTemplateDetail";
 import AdminScheduleBoards from "./pages/AdminScheduleBoards";
 import CalendarPage from "./pages/Calendar";
 
@@ -69,9 +66,6 @@ export default function App() {
             <Route path="/admin/alliances/:allianceId/custom-events" element={<AdminCustomEvents />} />
             <Route path="/admin/alliances/:allianceId/custom-events/new" element={<AdminCustomEventCreate />} />
             <Route path="/admin/alliances/:allianceId/custom-events/:id" element={<AdminCustomEventDetail />} />
-            <Route path="/admin/templates" element={<AdminTemplates />} />
-            <Route path="/admin/templates/new" element={<AdminTemplateCreate />} />
-            <Route path="/admin/templates/:id" element={<AdminTemplateDetail />} />
             <Route path="/admin/alliances/:allianceId/schedule-boards" element={<AdminScheduleBoards />} />
           </Route>
         </Routes>
