@@ -1,5 +1,5 @@
 __pycache__
-db
+/db
 db.bak
 db.bak-*
 log
