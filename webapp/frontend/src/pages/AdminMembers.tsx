@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import {
   getAdminAllianceMembers,
@@ -10,6 +10,7 @@ import {
   unlinkMemberDiscord,
   type AdminMember,
 } from "../api/client";
+import { Badge, ErrorState, LoadingState } from "../components/ui";
 
 /** Admin-level roster -- shows fields member-facing views don't (Discord
  * link status, kingdom id, deactivation state) and the writes that act
@@ -60,14 +61,6 @@ export default function AdminMembers() {
 
   return (
     <Layout title="Alliance members" backTo={{ to: "/admin", label: "Admin" }}>
-      <div className="mb-4">
-        <Link
-          to={`/admin/alliances/${allianceId}/settings`}
-          className="text-sm text-indigo-400 hover:text-indigo-300"
-        >
-          Channel setup →
-        </Link>
-      </div>
       <label className="mb-4 flex items-center gap-2 text-sm text-slate-400">
         <input
           type="checkbox"
@@ -78,8 +71,8 @@ export default function AdminMembers() {
         Active members only
       </label>
 
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load members.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load members." />}
 
       {data && (
         <>
@@ -174,15 +167,9 @@ function MemberRow({
           {member.discordId ? `linked (${member.discordId})` : "not linked"}
         </td>
         <td className="px-4 py-2">
-          {member.isActive ? (
-            <span className="rounded bg-emerald-900/40 px-2 py-0.5 text-xs text-emerald-300">
-              active
-            </span>
-          ) : (
-            <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-              inactive
-            </span>
-          )}
+          <Badge variant={member.isActive ? "success" : "neutral"}>
+            {member.isActive ? "active" : "inactive"}
+          </Badge>
         </td>
         <td className="px-4 py-2">
           <div className="flex flex-wrap gap-2">

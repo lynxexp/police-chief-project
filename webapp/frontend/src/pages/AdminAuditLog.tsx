@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Layout from "../components/Layout";
 import { getAuditLog, getAppAuditLog } from "../api/client";
+import { EmptyState, ErrorState, LoadingState } from "../components/ui";
 
 const PAGE_SIZE = 10;
 
@@ -18,11 +19,9 @@ function PermissionsTab() {
 
   return (
     <>
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load the audit log.</p>}
-      {data && data.rows.length === 0 && (
-        <p className="text-slate-400">No admin changes recorded yet.</p>
-      )}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load the audit log." />}
+      {data && data.rows.length === 0 && <EmptyState icon="📜">No admin changes recorded yet.</EmptyState>}
 
       {data && data.rows.length > 0 && (
         <>
@@ -91,11 +90,9 @@ function ActivityTab() {
 
   return (
     <>
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load the activity log.</p>}
-      {data && data.rows.length === 0 && (
-        <p className="text-slate-400">No activity recorded yet.</p>
-      )}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load the activity log." />}
+      {data && data.rows.length === 0 && <EmptyState icon="📋">No activity recorded yet.</EmptyState>}
 
       {data && data.rows.length > 0 && (
         <>

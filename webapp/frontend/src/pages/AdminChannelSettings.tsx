@@ -20,6 +20,7 @@ import {
   type AllianceSettings,
   type IdChannelScanSettings,
 } from "../api/client";
+import { ErrorState, LoadingState, buttonPrimary } from "../components/ui";
 
 const FIELDS: { key: keyof AllianceSettings; label: string }[] = [
   { key: "channelId", label: "Main channel" },
@@ -129,38 +130,34 @@ export default function AdminChannelSettings() {
       title="Channel setup"
       backTo={{ to: `/admin/alliances/${allianceId}/members`, label: "Members" }}
     >
-      {(settingsQuery.isLoading || channelsQuery.isLoading) && (
-        <p className="text-slate-400">Loading…</p>
-      )}
+      {(settingsQuery.isLoading || channelsQuery.isLoading) && <LoadingState />}
       {(settingsQuery.error || channelsQuery.error) && (
-        <p className="text-red-400">Couldn't load channel settings.</p>
+        <ErrorState message="Couldn't load channel settings." />
       )}
 
       {draft && channelsQuery.data && (
         <div className="max-w-md space-y-4">
           {FIELDS.map(({ key, label }) => (
             <div key={key}>
-              <label className="mb-1 block text-sm text-slate-400">{label}</label>
-              <select
-                value={draft[key] ?? ""}
-                onChange={(e) => setDraft({ ...draft, [key]: e.target.value || null })}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-              >
-                <option value="">— none —</option>
-                {channelsQuery.data.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    #{c.name}
-                  </option>
-                ))}
-              </select>
+              <label className="mb-1 block text-sm text-slate-400">
+                {label}
+                <select
+                  value={draft[key] ?? ""}
+                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value || null })}
+                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="">— none —</option>
+                  {channelsQuery.data.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           ))}
 
-          <button
-            onClick={() => saveMutation.mutate(draft)}
-            disabled={saveMutation.isPending}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-          >
+          <button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isPending} className={buttonPrimary}>
             Save
           </button>
           {saveMutation.isSuccess && <span className="ml-3 text-sm text-emerald-400">Saved.</span>}
@@ -171,23 +168,23 @@ export default function AdminChannelSettings() {
           <div className="border-t border-slate-800 pt-4">
             <label className="mb-1 block text-sm text-slate-400">
               Gift code announcement channel
+              <select
+                value={giftChannelDraft ?? ""}
+                onChange={(e) => setGiftChannelDraft(e.target.value || null)}
+                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              >
+                <option value="">— none —</option>
+                {channelsQuery.data.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    #{c.name}
+                  </option>
+                ))}
+              </select>
             </label>
-            <select
-              value={giftChannelDraft ?? ""}
-              onChange={(e) => setGiftChannelDraft(e.target.value || null)}
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            >
-              <option value="">— none —</option>
-              {channelsQuery.data.map((c) => (
-                <option key={c.id} value={c.id}>
-                  #{c.name}
-                </option>
-              ))}
-            </select>
             <button
               onClick={() => saveGiftChannelMutation.mutate(giftChannelDraft)}
               disabled={saveGiftChannelMutation.isPending}
-              className="mt-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+              className={`mt-2 ${buttonPrimary}`}
             >
               Save
             </button>
@@ -197,7 +194,7 @@ export default function AdminChannelSettings() {
           </div>
 
           <div className="border-t border-slate-800 pt-4">
-            <label className="mb-1 block text-sm text-slate-400">ID channels</label>
+            <div className="mb-1 text-sm text-slate-400">ID channels</div>
             {idChannelsQuery.data && idChannelsQuery.data.length > 0 && (
               <ul className="mb-2 space-y-1 text-sm">
                 {idChannelsQuery.data.map((c) => {
@@ -218,24 +215,27 @@ export default function AdminChannelSettings() {
               </ul>
             )}
             <div className="flex gap-2">
-              <select
-                value={newIdChannel}
-                onChange={(e) => setNewIdChannel(e.target.value)}
-                className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-              >
-                <option value="">— select a channel —</option>
-                {channelsQuery.data
-                  .filter((c) => !idChannelsQuery.data?.some((ic) => ic.channelId === c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      #{c.name}
-                    </option>
-                  ))}
-              </select>
+              <label className="flex-1">
+                <span className="sr-only">Add ID channel</span>
+                <select
+                  value={newIdChannel}
+                  onChange={(e) => setNewIdChannel(e.target.value)}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="">— select a channel —</option>
+                  {channelsQuery.data
+                    .filter((c) => !idChannelsQuery.data?.some((ic) => ic.channelId === c.id))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        #{c.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
               <button
                 onClick={() => addIdChannelMutation.mutate(newIdChannel)}
                 disabled={!newIdChannel || addIdChannelMutation.isPending}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                className={buttonPrimary}
               >
                 Add
               </button>
@@ -244,9 +244,7 @@ export default function AdminChannelSettings() {
 
           {scanDraft && (
             <div className="border-t border-slate-800 pt-4">
-              <label className="mb-2 block text-sm text-slate-400">
-                ID channel scan settings (server-wide)
-              </label>
+              <div className="mb-2 text-sm text-slate-400">ID channel scan settings (server-wide)</div>
               <div className="space-y-2 text-sm">
                 <label className="flex items-center gap-2">
                   <input
@@ -268,31 +266,31 @@ export default function AdminChannelSettings() {
                   />
                   Respond to invalid IDs
                 </label>
-                <div className="flex items-center gap-2">
-                  <label className="w-32 text-slate-400">Scan limit</label>
+                <label className="flex items-center gap-2">
+                  <span className="w-32 text-slate-400">Scan limit</span>
                   <input
                     type="number"
                     min={1}
                     value={scanDraft.scanLimit}
                     onChange={(e) => setScanDraft({ ...scanDraft, scanLimit: Number(e.target.value) })}
-                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1"
+                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
                   />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="w-32 text-slate-400">Delete after (s)</label>
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-32 text-slate-400">Delete after (s)</span>
                   <input
                     type="number"
                     min={0}
                     value={scanDraft.deleteAfter}
                     onChange={(e) => setScanDraft({ ...scanDraft, deleteAfter: Number(e.target.value) })}
-                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1"
+                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
                   />
-                </div>
+                </label>
               </div>
               <button
                 onClick={() => saveScanSettingsMutation.mutate(scanDraft)}
                 disabled={saveScanSettingsMutation.isPending}
-                className="mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                className={`mt-3 ${buttonPrimary}`}
               >
                 Save
               </button>
@@ -309,34 +307,26 @@ export default function AdminChannelSettings() {
                 <Link to="/admin/themes" className="text-indigo-400 hover:text-indigo-300">
                   manage themes
                 </Link>
+                <select
+                  value={guildThemeQuery.data.themeName ?? ""}
+                  onChange={(e) => setGuildThemeMutation.mutate(e.target.value || null)}
+                  disabled={setGuildThemeMutation.isPending}
+                  className="mt-1 block w-full max-w-xs rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="">— use global default —</option>
+                  {themesQuery.data.map((t) => (
+                    <option key={t.themeName} value={t.themeName}>
+                      {t.themeName}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <select
-                value={guildThemeQuery.data.themeName ?? ""}
-                onChange={(e) => setGuildThemeMutation.mutate(e.target.value || null)}
-                disabled={setGuildThemeMutation.isPending}
-                className="w-full max-w-xs rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-              >
-                <option value="">— use global default —</option>
-                {themesQuery.data.map((t) => (
-                  <option key={t.themeName} value={t.themeName}>
-                    {t.themeName}
-                  </option>
-                ))}
-              </select>
               {setGuildThemeMutation.isSuccess && (
                 <span className="ml-3 text-sm text-emerald-400">Saved.</span>
               )}
             </div>
           )}
 
-          <div className="border-t border-slate-800 pt-4">
-            <Link
-              to={`/admin/alliances/${allianceId}/notifications`}
-              className="text-sm text-indigo-400 hover:text-indigo-300"
-            >
-              Notifications (server-wide) →
-            </Link>
-          </div>
         </div>
       )}
     </Layout>

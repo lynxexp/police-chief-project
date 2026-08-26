@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import { getOwnProfile } from "../api/client";
+import { Badge, Card, EmptyState, ErrorState, LoadingState } from "../components/ui";
 
 /** Landing page: the caller's own linked fids, each a doorway into that
  * alliance's roster/trends -- not a "my stats" dead end, since alliance
@@ -14,27 +15,18 @@ export default function Profile() {
 
   return (
     <Layout title="Your profile">
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load your profile.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load your profile." />}
       {data && data.length === 0 && (
-        <p className="text-slate-400">
-          No characters are linked to your Discord account yet.
-        </p>
+        <EmptyState icon="👤">No characters are linked to your Discord account yet.</EmptyState>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {data?.map((entry) => (
-          <div
-            key={entry.fid}
-            className="rounded-lg border border-slate-800 bg-slate-900 p-5"
-          >
+          <Card key={entry.fid} className="p-5">
             <div className="flex items-baseline justify-between">
               <h2 className="font-medium">{entry.nickname ?? `fid ${entry.fid}`}</h2>
-              {!entry.isActive && (
-                <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                  inactive
-                </span>
-              )}
+              {!entry.isActive && <Badge>inactive</Badge>}
             </div>
             <dl className="mt-3 space-y-1 text-sm text-slate-400">
               <div className="flex justify-between">
@@ -58,7 +50,7 @@ export default function Profile() {
                 View alliance →
               </Link>
             )}
-          </div>
+          </Card>
         ))}
       </div>
     </Layout>

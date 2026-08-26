@@ -18,6 +18,7 @@ import {
   type VaultTrendPoint,
   type MemberHistory,
 } from "../api/client";
+import { Card, ErrorState, SectionHeading, buttonSecondary } from "../components/ui";
 
 const chartTheme = {
   grid: "#1e293b",
@@ -140,12 +141,10 @@ export default function MemberDetail() {
       backTo={{ to: `/alliance/${allianceId}`, label: "Alliance overview" }}
     >
       <section className="grid gap-6 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Vault Trap damage</h2>
+        <Card>
+          <SectionHeading>Vault Trap damage</SectionHeading>
           {vaultTrend.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-          {vaultTrend.error && (
-            <p className="text-sm text-red-400">Couldn't load vault history.</p>
-          )}
+          {vaultTrend.error && <ErrorState message="Couldn't load vault history." />}
           {vaultSplit && vaultSplit.rows.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={vaultSplit.rows}>
@@ -175,14 +174,12 @@ export default function MemberDetail() {
           ) : (
             vaultTrend.data && <p className="text-sm text-slate-500">No vault hunts recorded.</p>
           )}
-        </div>
+        </Card>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Capitol War points</h2>
+        <Card>
+          <SectionHeading>Capitol War points</SectionHeading>
           {capitolTrend.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-          {capitolTrend.error && (
-            <p className="text-sm text-red-400">Couldn't load Capitol War history.</p>
-          )}
+          {capitolTrend.error && <ErrorState message="Couldn't load Capitol War history." />}
           {capitolTrend.data && capitolTrend.data.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={capitolTrend.data}>
@@ -203,12 +200,12 @@ export default function MemberDetail() {
               <p className="text-sm text-slate-500">No Capitol War events recorded.</p>
             )
           )}
-        </div>
+        </Card>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Power over time</h2>
+        <Card>
+          <SectionHeading>Power over time</SectionHeading>
           {history.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-          {history.error && <p className="text-sm text-red-400">Couldn't load history.</p>}
+          {history.error && <ErrorState message="Couldn't load history." />}
           {powerSeries.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={powerSeries}>
@@ -236,16 +233,13 @@ export default function MemberDetail() {
           ) : (
             history.data && <p className="text-sm text-slate-500">No power history recorded.</p>
           )}
-        </div>
+        </Card>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-medium text-slate-300">Activity history</h2>
             {history.data && (
-              <button
-                onClick={handleExportHistory}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-              >
+              <button onClick={handleExportHistory} className={buttonSecondary}>
                 Export CSV
               </button>
             )}
@@ -277,7 +271,7 @@ export default function MemberDetail() {
               )}
             </div>
           )}
-        </div>
+        </Card>
       </section>
     </Layout>
   );

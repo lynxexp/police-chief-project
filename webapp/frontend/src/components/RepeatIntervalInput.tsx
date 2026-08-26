@@ -28,14 +28,16 @@ export default function RepeatIntervalInput({
     <div className="mt-2 grid grid-cols-5 gap-2">
       {UNIT_FIELDS.map((f) => (
         <div key={f.key}>
-          <label className="mb-1 block text-[11px] text-slate-500">{f.label}</label>
-          <input
-            type="number"
-            min={0}
-            value={units[f.key]}
-            onChange={(e) => setUnit(f.key, Number(e.target.value))}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm"
-          />
+          <label className="mb-1 block text-[11px] text-slate-500">
+            {f.label}
+            <input
+              type="number"
+              min={0}
+              value={units[f.key]}
+              onChange={(e) => setUnit(f.key, Number(e.target.value))}
+              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100"
+            />
+          </label>
         </div>
       ))}
     </div>

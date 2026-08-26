@@ -6,6 +6,7 @@ import { getTheme, updateTheme, type ThemeDetail } from "../api/client";
 import { ICON_CATEGORIES, DIVIDER_INDICES, COLOR_FIELDS } from "../theming/icons";
 import { buildThemePreview, PREVIEW_PAGE_TITLES } from "../theming/preview";
 import DiscordEmbedPreview from "../components/DiscordEmbedPreview";
+import { ErrorState, LoadingState, buttonPrimary, buttonSecondary } from "../components/ui";
 
 const DIVIDER_SUBFIELDS = ["Start", "Pattern", "End", "Length", "CodeBlock"] as const;
 const DIVIDER_KEYS = DIVIDER_INDICES.flatMap((i) => DIVIDER_SUBFIELDS.map((f) => `divider${f}${i}`));
@@ -56,26 +57,24 @@ export default function AdminThemeEditor() {
 
   return (
     <Layout title={`Theme: ${themeName}`} backTo={{ to: "/admin/themes", label: "Themes" }}>
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load theme.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load theme." />}
 
       {draft && (
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm text-slate-400">Description</label>
-            <input
-              value={(draft.themeDescription as string) ?? ""}
-              onChange={(e) => set("themeDescription", e.target.value)}
-              className="w-full max-w-md rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            />
+            <label className="mb-1 block text-sm text-slate-400">
+              Description
+              <input
+                value={(draft.themeDescription as string) ?? ""}
+                onChange={(e) => set("themeDescription", e.target.value)}
+                className="mt-1 w-full max-w-md rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              />
+            </label>
           </div>
 
           <div className="sticky top-0 z-10 -mx-6 bg-slate-950/95 px-6 py-3 backdrop-blur">
-            <button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-            >
+            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className={buttonPrimary}>
               Save
             </button>
             {saveMutation.isSuccess && (
@@ -95,7 +94,7 @@ export default function AdminThemeEditor() {
                 <button
                   onClick={() => setPreviewPage((p) => Math.max(0, p - 1))}
                   disabled={previewPage === 0}
-                  className="rounded border border-slate-700 px-2 py-1 hover:bg-slate-800 disabled:opacity-40"
+                  className={buttonSecondary}
                 >
                   ← Prev
                 </button>
@@ -105,7 +104,7 @@ export default function AdminThemeEditor() {
                 <button
                   onClick={() => setPreviewPage((p) => Math.min(PREVIEW_PAGE_TITLES.length - 1, p + 1))}
                   disabled={previewPage === PREVIEW_PAGE_TITLES.length - 1}
-                  className="rounded border border-slate-700 px-2 py-1 hover:bg-slate-800 disabled:opacity-40"
+                  className={buttonSecondary}
                 >
                   Next →
                 </button>
@@ -124,19 +123,25 @@ export default function AdminThemeEditor() {
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
               {COLOR_FIELDS.map(({ key, label }) => (
                 <div key={key}>
-                  <label className="mb-1 block text-xs text-slate-400">{label}</label>
+                  <span className="mb-1 block text-xs text-slate-400">{label}</span>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={(draft[key] as string) || "#000000"}
-                      onChange={(e) => set(key, e.target.value)}
-                      className="h-8 w-8 rounded border border-slate-700 bg-slate-900"
-                    />
-                    <input
-                      value={(draft[key] as string) ?? ""}
-                      onChange={(e) => set(key, e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                    />
+                    <label>
+                      <span className="sr-only">{label} swatch</span>
+                      <input
+                        type="color"
+                        value={(draft[key] as string) || "#000000"}
+                        onChange={(e) => set(key, e.target.value)}
+                        className="h-8 w-8 rounded border border-slate-700 bg-slate-900"
+                      />
+                    </label>
+                    <label className="flex-1">
+                      <span className="sr-only">{label} hex code</span>
+                      <input
+                        value={(draft[key] as string) ?? ""}
+                        onChange={(e) => set(key, e.target.value)}
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                      />
+                    </label>
                   </div>
                 </div>
               ))}
@@ -151,38 +156,46 @@ export default function AdminThemeEditor() {
               {DIVIDER_INDICES.map((i) => (
                 <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Start {i}</label>
-                    <input
-                      value={(draft[`dividerStart${i}`] as string) ?? ""}
-                      onChange={(e) => set(`dividerStart${i}`, e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Start {i}
+                      <input
+                        value={(draft[`dividerStart${i}`] as string) ?? ""}
+                        onChange={(e) => set(`dividerStart${i}`, e.target.value)}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                      />
+                    </label>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Pattern {i}</label>
-                    <input
-                      value={(draft[`dividerPattern${i}`] as string) ?? ""}
-                      onChange={(e) => set(`dividerPattern${i}`, e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Pattern {i}
+                      <input
+                        value={(draft[`dividerPattern${i}`] as string) ?? ""}
+                        onChange={(e) => set(`dividerPattern${i}`, e.target.value)}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                      />
+                    </label>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">End {i}</label>
-                    <input
-                      value={(draft[`dividerEnd${i}`] as string) ?? ""}
-                      onChange={(e) => set(`dividerEnd${i}`, e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      End {i}
+                      <input
+                        value={(draft[`dividerEnd${i}`] as string) ?? ""}
+                        onChange={(e) => set(`dividerEnd${i}`, e.target.value)}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                      />
+                    </label>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Length {i}</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={(draft[`dividerLength${i}`] as number) ?? 0}
-                      onChange={(e) => set(`dividerLength${i}`, Number(e.target.value))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Length {i}
+                      <input
+                        type="number"
+                        min={0}
+                        value={(draft[`dividerLength${i}`] as number) ?? 0}
+                        onChange={(e) => set(`dividerLength${i}`, Number(e.target.value))}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                      />
+                    </label>
                   </div>
                   <label className="flex items-end gap-1 pb-1 text-xs text-slate-400">
                     <input
@@ -206,12 +219,14 @@ export default function AdminThemeEditor() {
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {icons.map((iconKey) => (
                   <div key={iconKey}>
-                    <label className="mb-1 block text-xs text-slate-400">{iconLabel(iconKey)}</label>
-                    <input
-                      value={(draft[iconKey] as string) ?? ""}
-                      onChange={(e) => set(iconKey, e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-center text-sm"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      {iconLabel(iconKey)}
+                      <input
+                        value={(draft[iconKey] as string) ?? ""}
+                        onChange={(e) => set(iconKey, e.target.value)}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-center text-sm text-slate-100"
+                      />
+                    </label>
                   </div>
                 ))}
               </div>

@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { getAllianceGuild, getCustomEvents, getCustomEventSuggestions } from "../api/client";
+import { formatUtcAndLocal } from "../utils/time";
+import { EmptyState, ErrorState, LoadingState } from "../components/ui";
 
 export default function AdminCustomEvents() {
   const { allianceId: allianceIdParam } = useParams<{ allianceId: string }>();
@@ -29,21 +31,20 @@ export default function AdminCustomEvents() {
     <Layout
       title="Custom events"
       backTo={{ to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications" }}
-    >
-      {guildQuery.isLoading && <p className="text-slate-400">Loading…</p>}
-      {guildQuery.data && !guildId && (
-        <p className="text-slate-400">This alliance has no linked Discord server.</p>
-      )}
-
-      {guildId && (
-        <div className="mb-4">
+      actions={
+        guildId && (
           <Link
             to={`/admin/alliances/${allianceId}/custom-events/new`}
             className="inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
           >
             + New custom event
           </Link>
-        </div>
+        )
+      }
+    >
+      {guildQuery.isLoading && <LoadingState />}
+      {guildQuery.data && !guildId && (
+        <p className="text-slate-400">This alliance has no linked Discord server.</p>
       )}
 
       {suggestionsQuery.data && suggestionsQuery.data.missing.length > 0 && (
@@ -67,10 +68,10 @@ export default function AdminCustomEvents() {
         </div>
       )}
 
-      {eventsQuery.isLoading && <p className="text-slate-400">Loading events…</p>}
-      {eventsQuery.error && <p className="text-red-400">Couldn't load custom events.</p>}
+      {eventsQuery.isLoading && <LoadingState label="Loading events…" />}
+      {eventsQuery.error && <ErrorState message="Couldn't load custom events." />}
       {eventsQuery.data && eventsQuery.data.length === 0 && (
-        <p className="text-slate-400">No custom events configured for this server.</p>
+        <EmptyState icon="🗓️">No custom events configured for this server.</EmptyState>
       )}
 
       {eventsQuery.data && eventsQuery.data.length > 0 && (
@@ -89,7 +90,7 @@ export default function AdminCustomEvents() {
                 <span>
                   {e.recurrenceType ?? "?"}, every {e.recurrenceInterval ?? 1}
                 </span>
-                {e.nextOccurrence && <span>Next: {new Date(e.nextOccurrence).toLocaleString()}</span>}
+                {e.nextOccurrence && <span>Next: {formatUtcAndLocal(e.nextOccurrence)}</span>}
               </div>
             </Link>
           ))}

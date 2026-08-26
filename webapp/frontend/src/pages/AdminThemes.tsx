@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import { getThemes, createTheme, deleteTheme, setActiveTheme } from "../api/client";
+import { Badge, Card, ErrorState, LoadingState, SectionHeading } from "../components/ui";
 
 export default function AdminThemes() {
   const queryClient = useQueryClient();
@@ -31,31 +32,34 @@ export default function AdminThemes() {
 
   return (
     <Layout title="Themes" backTo={{ to: "/admin", label: "Admin" }}>
-      <div className="mb-6 flex gap-2">
-        <input
-          placeholder="New theme name"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-        />
-        <button
-          onClick={() => createMutation.mutate()}
-          disabled={!newName.trim() || createMutation.isPending}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-        >
-          Create (clones "default")
-        </button>
-      </div>
-      {createMutation.isError && (
-        <p className="mb-4 text-sm text-red-400">{(createMutation.error as Error).message}</p>
-      )}
+      <Card className="mb-6">
+        <SectionHeading>Create a new theme</SectionHeading>
+        <div className="flex gap-2">
+          <input
+            placeholder="New theme name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+          />
+          <button
+            onClick={() => createMutation.mutate()}
+            disabled={!newName.trim() || createMutation.isPending}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            Create (clones "default")
+          </button>
+        </div>
+        {createMutation.isError && (
+          <p className="mt-2 text-sm text-red-400">{(createMutation.error as Error).message}</p>
+        )}
+      </Card>
 
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load themes.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load themes." />}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {data?.map((t) => (
-          <div key={t.themeName} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+          <Card key={t.themeName}>
             <div className="flex items-center justify-between">
               <Link
                 to={`/admin/themes/${encodeURIComponent(t.themeName)}`}
@@ -63,11 +67,7 @@ export default function AdminThemes() {
               >
                 {t.themeName}
               </Link>
-              {t.isActive && (
-                <span className="rounded bg-emerald-900/40 px-2 py-0.5 text-xs text-emerald-300">
-                  global default
-                </span>
-              )}
+              {t.isActive && <Badge variant="success">global default</Badge>}
             </div>
             {t.themeDescription && (
               <p className="mt-1 text-sm text-slate-400">{t.themeDescription}</p>
@@ -96,7 +96,7 @@ export default function AdminThemes() {
                 </button>
               )}
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     </Layout>

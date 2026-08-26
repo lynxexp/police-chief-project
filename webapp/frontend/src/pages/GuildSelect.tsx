@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { getGuilds, setActiveGuild } from "../api/client";
+import { ErrorState, LoadingState } from "../components/ui";
 
 /**
  * Only reachable for a Server-tier admin who belongs to more than one
@@ -32,8 +33,8 @@ export default function GuildSelect() {
         one you want to manage.
       </p>
 
-      {isLoading && <p className="text-slate-400">Loading servers…</p>}
-      {error && <p className="text-red-400">Couldn't load your servers. Try again.</p>}
+      {isLoading && <LoadingState label="Loading servers…" />}
+      {error && <ErrorState message="Couldn't load your servers. Try again." />}
 
       <div className="flex w-full max-w-sm flex-col gap-2">
         {guilds?.map((guild) => (
@@ -48,9 +49,7 @@ export default function GuildSelect() {
         ))}
       </div>
 
-      {mutation.isError && (
-        <p className="text-red-400">Couldn't select that server. Try again.</p>
-      )}
+      {mutation.isError && <ErrorState message="Couldn't select that server. Try again." />}
     </div>
   );
 }

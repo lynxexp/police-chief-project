@@ -9,6 +9,8 @@ import {
   type NotificationSummary,
 } from "../api/client";
 import { describeRepeatMinutes } from "../notifications/repeatInterval";
+import { formatUtcAndLocal } from "../utils/time";
+import { Badge, Card, EmptyState, ErrorState, LoadingState } from "../components/ui";
 
 /** repeat_minutes is a discriminated sentinel, not a plain interval --
  * see the plan doc / backend's VaultNotificationTable doc comment. */
@@ -74,37 +76,24 @@ export default function AdminNotifications() {
     <Layout
       title="Notifications"
       backTo={{ to: `/admin/alliances/${allianceId}/settings`, label: "Channel setup" }}
-    >
-      {guildQuery.isLoading && <p className="text-slate-400">Loading…</p>}
-      {guildQuery.data && !guildId && (
-        <p className="text-slate-400">This alliance has no linked Discord server.</p>
-      )}
-
-      {guildId && (
-        <div className="mb-4 flex flex-wrap gap-3">
+      actions={
+        guildId && (
           <Link
             to={`/admin/alliances/${allianceId}/notifications/new`}
             className="inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
           >
             + New notification
           </Link>
-          <Link
-            to={`/admin/alliances/${allianceId}/custom-events`}
-            className="inline-block rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
-          >
-            Custom events →
-          </Link>
-          <Link
-            to={`/admin/alliances/${allianceId}/schedule-boards`}
-            className="inline-block rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
-          >
-            Schedule boards →
-          </Link>
-        </div>
+        )
+      }
+    >
+      {guildQuery.isLoading && <LoadingState />}
+      {guildQuery.data && !guildId && (
+        <p className="text-slate-400">This alliance has no linked Discord server.</p>
       )}
 
       {trapSettingsQuery.data && (
-        <div className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm text-slate-300">
+        <Card className="mb-6 text-sm text-slate-300">
           <div className="mb-2 font-medium text-slate-200">Vault Trap message settings</div>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-400">
             <span>
@@ -126,13 +115,13 @@ export default function AdminNotifications() {
               </span>
             </span>
           </div>
-        </div>
+        </Card>
       )}
 
-      {notificationsQuery.isLoading && <p className="text-slate-400">Loading notifications…</p>}
-      {notificationsQuery.error && <p className="text-red-400">Couldn't load notifications.</p>}
+      {notificationsQuery.isLoading && <LoadingState label="Loading notifications…" />}
+      {notificationsQuery.error && <ErrorState message="Couldn't load notifications." />}
       {notificationsQuery.data && notificationsQuery.data.length === 0 && (
-        <p className="text-slate-400">No notifications configured for this server.</p>
+        <EmptyState icon="🔔">No notifications configured for this server.</EmptyState>
       )}
 
       {notificationsQuery.data && notificationsQuery.data.length > 0 && (
@@ -170,24 +159,18 @@ export default function AdminNotifications() {
                     {String(n.hour).padStart(2, "0")}:{String(n.minute).padStart(2, "0")} ({n.timezone})
                   </span>
                 </div>
-                <span
-                  className={`rounded px-2 py-0.5 text-xs ${
-                    n.isEnabled
-                      ? "bg-emerald-950 text-emerald-400"
-                      : "bg-slate-800 text-slate-400"
-                  }`}
-                >
+                <Badge variant={n.isEnabled ? "success" : "neutral"}>
                   {n.isEnabled ? "Enabled" : "Disabled"}
-                </span>
+                </Badge>
               </div>
               <div className="mt-1 text-sm text-slate-400">{descriptionPreview(n)}</div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                 <span>#{n.channelName ?? n.channelId}</span>
                 <span>{repeatLabel(n)}</span>
                 <span>{mentionLabel(n.mentionType)}</span>
-                {n.nextNotification && <span>Next: {new Date(n.nextNotification).toLocaleString()}</span>}
+                {n.nextNotification && <span>Next: {formatUtcAndLocal(n.nextNotification)}</span>}
                 {n.autoDisabledAt && (
-                  <span className="text-amber-400">Auto-disabled {new Date(n.autoDisabledAt).toLocaleString()}</span>
+                  <span className="text-amber-400">Auto-disabled {formatUtcAndLocal(n.autoDisabledAt)}</span>
                 )}
               </div>
             </Link>

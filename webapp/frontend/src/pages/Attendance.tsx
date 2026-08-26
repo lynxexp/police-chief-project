@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { getVaultAttendance, getCapitolAttendance, getAllianceVaultTraps } from "../api/client";
+import { ErrorState, LoadingState } from "../components/ui";
 
 type Kind = "vault" | "capitol";
 
@@ -114,8 +115,8 @@ export default function Attendance() {
         </div>
       )}
 
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load attendance.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load attendance." />}
 
       {data && (
         <>
@@ -132,7 +133,7 @@ export default function Attendance() {
               Export CSV
             </button>
           </div>
-          <div className="overflow-hidden rounded-lg border border-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-slate-800">
             <table className="w-full text-sm">
               <thead className="bg-slate-900 text-left text-slate-400">
                 <tr>

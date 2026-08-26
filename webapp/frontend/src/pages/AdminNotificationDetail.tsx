@@ -14,6 +14,7 @@ import {
 import DiscordEmbedPreview, { defaultPlaceholderSample } from "../components/DiscordEmbedPreview";
 import RepeatIntervalInput from "../components/RepeatIntervalInput";
 import { describeRepeatMinutes } from "../notifications/repeatInterval";
+import { formatUtcAndLocal } from "../utils/time";
 import EmbedFieldsForm, {
   defaultEmbedDraft,
   embedDraftFromNotificationEmbed,
@@ -21,6 +22,7 @@ import EmbedFieldsForm, {
   isEmbedDraftValid,
   type EmbedDraft,
 } from "../components/EmbedFieldsForm";
+import { Badge, Card, ErrorState, LoadingState, SectionHeading, buttonDanger, buttonPrimary, buttonSecondary } from "../components/ui";
 
 const NOTIFICATION_TYPE_OFFSETS: Record<number, string> = {
   1: "30, 10, 5, 0 min before",
@@ -207,8 +209,8 @@ export default function AdminNotificationDetail() {
       title="Notification detail"
       backTo={{ to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications" }}
     >
-      {notificationQuery.isLoading && <p className="text-slate-400">Loading…</p>}
-      {notificationQuery.error && <p className="text-red-400">Couldn't load this notification.</p>}
+      {notificationQuery.isLoading && <LoadingState />}
+      {notificationQuery.error && <ErrorState message="Couldn't load this notification." />}
 
       {n && (
         <div className="space-y-4">
@@ -218,14 +220,14 @@ export default function AdminNotificationDetail() {
                 setDraft(draftFromNotification(n));
                 setEditing((v) => !v);
               }}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
+              className={buttonSecondary}
             >
               {editing ? "Cancel edit" : "Edit"}
             </button>
             <button
               onClick={() => toggleMutation.mutate()}
               disabled={toggleMutation.isPending}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-50"
+              className={buttonSecondary}
             >
               {n.isEnabled ? "Disable" : "Enable"}
             </button>
@@ -234,15 +236,15 @@ export default function AdminNotificationDetail() {
                 if (confirm("Delete this notification? This cannot be undone.")) deleteMutation.mutate();
               }}
               disabled={deleteMutation.isPending}
-              className="rounded-md border border-red-900 px-3 py-1.5 text-sm text-red-400 hover:bg-red-950 disabled:opacity-50"
+              className={buttonDanger}
             >
               Delete
             </button>
           </div>
 
           {editing && draft && (
-            <div className="rounded-lg border border-indigo-900 bg-slate-900 p-4">
-              <div className="mb-3 font-medium text-slate-200">Edit notification</div>
+            <Card className="border-indigo-900">
+              <SectionHeading>Edit notification</SectionHeading>
               {needsDowngradeWarning && (
                 <p className="mb-3 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
                   This notification uses a repeat mode or message type this editor doesn't support (a
@@ -253,68 +255,82 @@ export default function AdminNotificationDetail() {
               )}
               <div className="space-y-3">
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">Event name (optional)</label>
-                  <input
-                    value={draft.eventType}
-                    onChange={(e) => setDraft({ ...draft, eventType: e.target.value })}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                  />
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Event name (optional)
+                    <input
+                      value={draft.eventType}
+                      onChange={(e) => setDraft({ ...draft, eventType: e.target.value })}
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                    />
+                  </label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Hour (0-23)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={23}
-                      value={draft.hour}
-                      onChange={(e) => setDraft({ ...draft, hour: Number(e.target.value) })}
-                      className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Hour (0-23)
+                      <input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={draft.hour}
+                        onChange={(e) => setDraft({ ...draft, hour: Number(e.target.value) })}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                      />
+                    </label>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Minute (0-59)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={draft.minute}
-                      onChange={(e) => setDraft({ ...draft, minute: Number(e.target.value) })}
-                      className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Minute (0-59)
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={draft.minute}
+                        onChange={(e) => setDraft({ ...draft, minute: Number(e.target.value) })}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                      />
+                    </label>
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">Timezone</label>
-                  <input
-                    value={draft.timezone}
-                    onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                  />
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Timezone
+                    <input
+                      value={draft.timezone}
+                      onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                    />
+                  </label>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">Reminder offsets</label>
-                  <select
-                    value={draft.notificationType}
-                    onChange={(e) => setDraft({ ...draft, notificationType: Number(e.target.value) })}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                  >
-                    {Object.entries(NOTIFICATION_TYPE_OFFSETS)
-                      .filter(([v]) => EDITABLE_NOTIFICATION_TYPES.includes(Number(v) as 1 | 2 | 3 | 4 | 5))
-                      .map(([v, label]) => (
-                        <option key={v} value={v}>
-                          {label}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Mention</label>
-                  <div className="flex gap-2">
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Reminder offsets
                     <select
+                      value={draft.notificationType}
+                      onChange={(e) => setDraft({ ...draft, notificationType: Number(e.target.value) })}
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                    >
+                      {Object.entries(NOTIFICATION_TYPE_OFFSETS)
+                        .filter(([v]) => EDITABLE_NOTIFICATION_TYPES.includes(Number(v) as 1 | 2 | 3 | 4 | 5))
+                        .map(([v, label]) => (
+                          <option key={v} value={v}>
+                            {label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+                <div>
+                  <span className="mb-1 block text-xs text-slate-400">Mention</span>
+                  <div className="flex gap-2">
+                    <label className="sr-only" htmlFor="edit-notification-mention-kind">
+                      Mention type
+                    </label>
+                    <select
+                      id="edit-notification-mention-kind"
                       value={draft.mentionKind}
                       onChange={(e) => setDraft({ ...draft, mentionKind: e.target.value as EditDraft["mentionKind"] })}
-                      className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
+                      className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
                     >
                       <option value="none">No mention</option>
                       <option value="everyone">@everyone</option>
@@ -322,26 +338,31 @@ export default function AdminNotificationDetail() {
                       <option value="member">Member</option>
                     </select>
                     {(draft.mentionKind === "role" || draft.mentionKind === "member") && (
-                      <input
-                        value={draft.mentionId}
-                        onChange={(e) => setDraft({ ...draft, mentionId: e.target.value })}
-                        placeholder={draft.mentionKind === "role" ? "Role ID" : "Member ID"}
-                        className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                      />
+                      <label className="flex-1">
+                        <span className="sr-only">{draft.mentionKind === "role" ? "Role ID" : "Member ID"}</span>
+                        <input
+                          value={draft.mentionId}
+                          onChange={(e) => setDraft({ ...draft, mentionId: e.target.value })}
+                          placeholder={draft.mentionKind === "role" ? "Role ID" : "Member ID"}
+                          className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                        />
+                      </label>
                     )}
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">Repeat</label>
-                  <select
-                    value={draft.repeatMode}
-                    onChange={(e) => setDraft({ ...draft, repeatMode: e.target.value as RepeatMode })}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                  >
-                    <option value="none">One-time</option>
-                    <option value="minutes">Custom interval</option>
-                    <option value="weekdays">Specific weekdays</option>
-                  </select>
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Repeat
+                    <select
+                      value={draft.repeatMode}
+                      onChange={(e) => setDraft({ ...draft, repeatMode: e.target.value as RepeatMode })}
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                    >
+                      <option value="none">One-time</option>
+                      <option value="minutes">Custom interval</option>
+                      <option value="weekdays">Specific weekdays</option>
+                    </select>
+                  </label>
                   {draft.repeatMode === "minutes" && (
                     <RepeatIntervalInput
                       totalMinutes={draft.repeatMinutes}
@@ -362,6 +383,7 @@ export default function AdminNotificationDetail() {
                                 : [...draft.weekdays, d.value],
                             })
                           }
+                          aria-pressed={draft.weekdays.includes(d.value)}
                           className={`rounded-md border px-2.5 py-1 text-xs ${
                             draft.weekdays.includes(d.value)
                               ? "border-indigo-500 bg-indigo-600 text-white"
@@ -375,25 +397,29 @@ export default function AdminNotificationDetail() {
                   )}
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">Message type</label>
-                  <select
-                    value={draft.messageKind}
-                    onChange={(e) => setDraft({ ...draft, messageKind: e.target.value as MessageKind })}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                  >
-                    <option value="plain">Plain text</option>
-                    <option value="embed">Embed</option>
-                  </select>
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Message type
+                    <select
+                      value={draft.messageKind}
+                      onChange={(e) => setDraft({ ...draft, messageKind: e.target.value as MessageKind })}
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                    >
+                      <option value="plain">Plain text</option>
+                      <option value="embed">Embed</option>
+                    </select>
+                  </label>
                 </div>
                 {draft.messageKind === "plain" ? (
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Message</label>
-                    <textarea
-                      value={draft.description}
-                      onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                      rows={4}
-                      className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-                    />
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Message
+                      <textarea
+                        value={draft.description}
+                        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                        rows={4}
+                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                      />
+                    </label>
                   </div>
                 ) : (
                   <EmbedFieldsForm
@@ -414,7 +440,7 @@ export default function AdminNotificationDetail() {
                     (draft.repeatMode === "weekdays" && draft.weekdays.length === 0) ||
                     (draft.repeatMode === "minutes" && draft.repeatMinutes <= 0)
                   }
-                  className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                  className={buttonPrimary}
                 >
                   Save changes
                 </button>
@@ -422,19 +448,15 @@ export default function AdminNotificationDetail() {
                   <p className="text-sm text-red-400">{(saveMutation.error as Error).message}</p>
                 )}
               </div>
-            </div>
+            </Card>
           )}
 
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+          <Card>
             <div className="mb-3 flex items-center justify-between">
               <div className="text-lg font-medium">{n.eventType ?? "Custom"}</div>
-              <span
-                className={`rounded px-2 py-0.5 text-xs ${
-                  n.isEnabled ? "bg-emerald-950 text-emerald-400" : "bg-slate-800 text-slate-400"
-                }`}
-              >
+              <Badge variant={n.isEnabled ? "success" : "neutral"}>
                 {n.isEnabled ? "Enabled" : "Disabled"}
-              </span>
+              </Badge>
             </div>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
               <div>
@@ -461,16 +483,16 @@ export default function AdminNotificationDetail() {
               </div>
               <div>
                 <dt className="text-slate-500">Next fire</dt>
-                <dd>{n.nextNotification ? new Date(n.nextNotification).toLocaleString() : "—"}</dd>
+                <dd>{formatUtcAndLocal(n.nextNotification)}</dd>
               </div>
               <div>
                 <dt className="text-slate-500">Last fired</dt>
-                <dd>{n.lastNotification ? new Date(n.lastNotification).toLocaleString() : "—"}</dd>
+                <dd>{formatUtcAndLocal(n.lastNotification)}</dd>
               </div>
               {n.autoDisabledAt && (
                 <div className="sm:col-span-2">
                   <dt className="text-amber-400">Auto-disabled</dt>
-                  <dd className="text-amber-400">{new Date(n.autoDisabledAt).toLocaleString()}</dd>
+                  <dd className="text-amber-400">{formatUtcAndLocal(n.autoDisabledAt)}</dd>
                 </div>
               )}
               <div>
@@ -482,10 +504,10 @@ export default function AdminNotificationDetail() {
                 <dd>{n.createdAt ? new Date(n.createdAt).toLocaleString() : "—"}</dd>
               </div>
             </dl>
-          </div>
+          </Card>
 
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <div className="mb-2 font-medium text-slate-200">Message</div>
+          <Card>
+            <SectionHeading>Message</SectionHeading>
             {n.descriptionKind === "embed" && n.embed ? (
               <DiscordEmbedPreview embed={n.embed} applyPlaceholders={false} />
             ) : (
@@ -496,12 +518,12 @@ export default function AdminNotificationDetail() {
                 Custom times: {n.customTimes.join(", ")} min before
               </div>
             )}
-          </div>
+          </Card>
 
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <div className="mb-2 font-medium text-slate-200">Sent history</div>
-            {historyQuery.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
-            {historyQuery.error && <p className="text-sm text-red-400">Couldn't load history.</p>}
+          <Card>
+            <SectionHeading>Sent history</SectionHeading>
+            {historyQuery.isLoading && <LoadingState />}
+            {historyQuery.error && <ErrorState message="Couldn't load history." />}
             {historyQuery.data && historyQuery.data.rows.length === 0 && (
               <p className="text-sm text-slate-400">No sends recorded yet.</p>
             )}
@@ -519,9 +541,9 @@ export default function AdminNotificationDetail() {
                     <tbody className="text-slate-300">
                       {historyQuery.data.rows.map((h) => (
                         <tr key={h.id} className="border-t border-slate-800">
-                          <td className="py-1 pr-4">{h.sentAt ? new Date(h.sentAt).toLocaleString() : "—"}</td>
+                          <td className="py-1 pr-4">{formatUtcAndLocal(h.sentAt)}</td>
                           <td className="py-1 pr-4">{h.notificationTime} min before</td>
-                          <td className="py-1 pr-4">{h.deletedAt ? new Date(h.deletedAt).toLocaleString() : "—"}</td>
+                          <td className="py-1 pr-4">{formatUtcAndLocal(h.deletedAt)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -531,21 +553,21 @@ export default function AdminNotificationDetail() {
                   <button
                     onClick={() => setHistoryOffset(Math.max(0, historyOffset - HISTORY_PAGE_SIZE))}
                     disabled={historyOffset === 0}
-                    className="rounded border border-slate-700 px-2 py-1 hover:bg-slate-800 disabled:opacity-40"
+                    className={buttonSecondary}
                   >
                     Newer
                   </button>
                   <button
                     onClick={() => setHistoryOffset(historyOffset + HISTORY_PAGE_SIZE)}
                     disabled={!historyQuery.data.hasMore}
-                    className="rounded border border-slate-700 px-2 py-1 hover:bg-slate-800 disabled:opacity-40"
+                    className={buttonSecondary}
                   >
                     Older
                   </button>
                 </div>
               </>
             )}
-          </div>
+          </Card>
         </div>
       )}
     </Layout>

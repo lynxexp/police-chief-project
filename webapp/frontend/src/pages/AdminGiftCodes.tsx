@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
 import { getAdminGiftCodes, addGiftCode, updateGiftCode } from "../api/client";
+import { Badge, Card, ErrorState, LoadingState, SectionHeading, buttonPrimary } from "../components/ui";
 
 /** Global/Owner only, server-gated -- adding a code here gets announced to
  * Discord within about a minute by the bot's own polling loop (see
@@ -48,43 +49,49 @@ export default function AdminGiftCodes() {
 
   return (
     <Layout title="Gift codes" backTo={{ to: "/admin", label: "Admin" }}>
-      <div className="mb-8 max-w-lg rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="mb-3 text-sm font-medium text-slate-300">Add code</h2>
+      <Card className="mb-8 max-w-lg">
+        <SectionHeading>Add code</SectionHeading>
         <div className="space-y-2">
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Code</label>
-            <input
-              placeholder="Code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-            />
+            <label className="mb-1 block text-xs text-slate-400">
+              Code
+              <input
+                placeholder="Code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+              />
+            </label>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Note (optional)</label>
-            <input
-              placeholder="Note (optional)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-            />
+            <label className="mb-1 block text-xs text-slate-400">
+              Note (optional)
+              <input
+                placeholder="Note (optional)"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+              />
+            </label>
           </div>
           <div>
-            {/* type="date" inputs ignore the placeholder attribute in every
-             * browser -- an explicit label is the only way this field is
-             * visible at all, unlike the text inputs above it. */}
-            <label className="mb-1 block text-xs text-slate-400">Expiry date (optional)</label>
-            <input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-            />
+            <label className="mb-1 block text-xs text-slate-400">
+              {/* type="date" inputs ignore the placeholder attribute in every
+               * browser -- an explicit label is the only way this field is
+               * visible at all, unlike the text inputs above it. */}
+              Expiry date (optional)
+              <input
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+              />
+            </label>
           </div>
           <button
             onClick={() => addMutation.mutate()}
             disabled={addMutation.isPending || !code.trim()}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+            className={buttonPrimary}
           >
             Add
           </button>
@@ -92,10 +99,10 @@ export default function AdminGiftCodes() {
             <p className="text-xs text-red-400">{(addMutation.error as Error).message}</p>
           )}
         </div>
-      </div>
+      </Card>
 
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load gift codes.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load gift codes." />}
 
       {data && (
         <>
@@ -111,7 +118,7 @@ export default function AdminGiftCodes() {
           {data.length === 0 && (
             <p className="mb-3 text-sm text-slate-500">No gift codes yet.</p>
           )}
-        <div className="overflow-hidden rounded-lg border border-slate-800">
+        <div className="overflow-x-auto rounded-lg border border-slate-800">
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-left text-slate-400">
               <tr>
@@ -134,15 +141,9 @@ export default function AdminGiftCodes() {
                     )}
                   </td>
                   <td className="px-4 py-2">
-                    {c.isActive ? (
-                      <span className="rounded bg-emerald-900/40 px-2 py-0.5 text-xs text-emerald-300">
-                        active
-                      </span>
-                    ) : (
-                      <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                        inactive
-                      </span>
-                    )}
+                    <Badge variant={c.isActive ? "success" : "neutral"}>
+                      {c.isActive ? "active" : "inactive"}
+                    </Badge>
                   </td>
                   <td className="px-4 py-2">
                     <button

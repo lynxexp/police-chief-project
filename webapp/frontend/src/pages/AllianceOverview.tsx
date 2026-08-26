@@ -18,6 +18,7 @@ import {
   getAllianceCapitolTrend,
   type AllianceVaultTrendPoint,
 } from "../api/client";
+import { Card, ErrorState, LoadingState, SectionHeading, buttonSecondary } from "../components/ui";
 
 const chartTheme = {
   grid: "#1e293b",
@@ -91,44 +92,27 @@ export default function AllianceOverview() {
 
   return (
     <Layout title="Alliance overview" backTo={{ to: "/", label: "Your profile" }}>
-      <section className="mb-8 flex gap-3">
-        <Link
-          to={`/alliance/${allianceId}/leaderboard/vault`}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
+      <section className="mb-8 flex flex-wrap gap-3">
+        <Link to={`/alliance/${allianceId}/leaderboard/vault`} className={buttonSecondary}>
           Vault leaderboard →
         </Link>
-        <Link
-          to={`/alliance/${allianceId}/leaderboard/capitol`}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
+        <Link to={`/alliance/${allianceId}/leaderboard/capitol`} className={buttonSecondary}>
           Capitol leaderboard →
         </Link>
-        <Link
-          to={`/alliance/${allianceId}/attendance/vault`}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
+        <Link to={`/alliance/${allianceId}/attendance/vault`} className={buttonSecondary}>
           Vault attendance →
         </Link>
-        <Link
-          to={`/alliance/${allianceId}/attendance/capitol`}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
+        <Link to={`/alliance/${allianceId}/attendance/capitol`} className={buttonSecondary}>
           Capitol attendance →
         </Link>
-        <Link
-          to={`/alliance/${allianceId}/calendar`}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
+        <Link to={`/alliance/${allianceId}/calendar`} className={buttonSecondary}>
           Event calendar →
         </Link>
       </section>
 
       <section className="mb-8 grid gap-6 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">
-            Vault Trap total damage
-          </h2>
+        <Card>
+          <SectionHeading>Vault Trap total damage</SectionHeading>
           {vaultChartRows.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={vaultChartRows}>
@@ -159,12 +143,10 @@ export default function AllianceOverview() {
           ) : (
             <p className="text-sm text-slate-500">No vault hunts recorded yet.</p>
           )}
-        </div>
+        </Card>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">
-            Capitol War total points
-          </h2>
+        <Card>
+          <SectionHeading>Capitol War total points</SectionHeading>
           {capitolTrend.data && capitolTrend.data.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={capitolTrend.data}>
@@ -184,15 +166,15 @@ export default function AllianceOverview() {
           ) : (
             <p className="text-sm text-slate-500">No Capitol War events recorded yet.</p>
           )}
-        </div>
+        </Card>
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-medium text-slate-300">Roster</h2>
-        {members.isLoading && <p className="text-slate-400">Loading…</p>}
-        {members.error && <p className="text-red-400">Couldn't load the roster.</p>}
+        <SectionHeading>Roster</SectionHeading>
+        {members.isLoading && <LoadingState />}
+        {members.error && <ErrorState message="Couldn't load the roster." />}
         {members.data && (
-          <div className="overflow-hidden rounded-lg border border-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-slate-800">
             <table className="w-full text-sm">
               <thead className="bg-slate-900 text-left text-slate-400">
                 <tr>

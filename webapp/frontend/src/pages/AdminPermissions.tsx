@@ -12,6 +12,7 @@ import {
   type AuthContext,
   type Tier,
 } from "../api/client";
+import { Card, ErrorState, LoadingState, SectionHeading } from "../components/ui";
 
 const SETTABLE_TIERS: Tier[] = ["global", "server", "alliance"];
 
@@ -72,8 +73,8 @@ export default function AdminPermissions() {
         </Link>
       </div>
 
-      <div className="mb-8 max-w-lg rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="mb-3 text-sm font-medium text-slate-300">Add admin</h2>
+      <Card className="mb-8 max-w-lg">
+        <SectionHeading>Add admin</SectionHeading>
         <div className="space-y-2">
           <input
             placeholder="Discord user ID"
@@ -113,13 +114,13 @@ export default function AdminPermissions() {
             </p>
           )}
         </div>
-      </div>
+      </Card>
 
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load the admin list.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load the admin list." />}
 
       {data && (
-        <div className="overflow-hidden rounded-lg border border-slate-800">
+        <div className="overflow-x-auto rounded-lg border border-slate-800">
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-left text-slate-400">
               <tr>

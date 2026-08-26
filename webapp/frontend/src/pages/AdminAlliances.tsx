@@ -7,6 +7,7 @@ import {
   updateRegisterSettings,
   type AuthContext,
 } from "../api/client";
+import { Card, EmptyState, ErrorState, LoadingState, SectionHeading } from "../components/ui";
 
 /** Entry point for admins: the alliances they can manage (all of them,
  * for Owner/Global tier -- see routes/admin.ts's getAdminAlliances). */
@@ -30,81 +31,46 @@ export default function AdminAlliances() {
 
   return (
     <Layout title="Admin" backTo={{ to: "/", label: "Your profile" }}>
-      {ctx.isGlobal && (
-        <>
-          <div className="mb-4 flex gap-3 text-sm">
-            <Link
-              to="/admin/permissions"
-              className="rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-            >
-              Manage admins →
-            </Link>
-            <Link
-              to="/admin/permissions/audit-log"
-              className="rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-            >
-              Audit log →
-            </Link>
-            <Link
-              to="/admin/gift-codes"
-              className="rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-            >
-              Gift codes →
-            </Link>
-            <Link
-              to="/admin/themes"
-              className="rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-            >
-              Themes →
-            </Link>
-            <Link
-              to="/admin/templates"
-              className="rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-            >
-              Templates →
-            </Link>
-            {ctx.isOwner && (
-              <Link
-                to="/admin/backups"
-                className="rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-              >
-                Backups →
-              </Link>
-            )}
-          </div>
-
-          {registerSettings.data && (
-            <label className="mb-6 flex w-fit items-center gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={registerSettings.data.enabled}
-                onChange={(e) => toggleRegister.mutate(e.target.checked)}
-                disabled={toggleRegister.isPending}
-                className="rounded border-slate-700 bg-slate-950"
-              />
-              Self-registration (/register) enabled bot-wide
-            </label>
-          )}
-        </>
+      {ctx.isGlobal && registerSettings.data && (
+        <label className="mb-6 flex w-fit items-center gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={registerSettings.data.enabled}
+            onChange={(e) => toggleRegister.mutate(e.target.checked)}
+            disabled={toggleRegister.isPending}
+            className="rounded border-slate-700 bg-slate-950"
+          />
+          Self-registration (/register) enabled bot-wide
+        </label>
       )}
 
-      <h2 className="mb-3 text-sm font-medium text-slate-300">Alliances you administer</h2>
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load alliances.</p>}
-      {data && data.length === 0 && (
-        <p className="text-slate-400">No alliances assigned to you.</p>
-      )}
+      <SectionHeading>Alliances you administer</SectionHeading>
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load alliances." />}
+      {data && data.length === 0 && <EmptyState icon="🏛️">No alliances assigned to you.</EmptyState>}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {data?.map((a) => (
-          <Link
-            key={a.allianceId}
-            to={`/admin/alliances/${a.allianceId}/members`}
-            className="rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-slate-700"
-          >
+          <Card key={a.allianceId}>
             <div className="font-medium">{a.name ?? `Alliance ${a.allianceId}`}</div>
-            <div className="mt-1 text-xs text-slate-500">Manage members →</div>
-          </Link>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              <Link to={`/admin/alliances/${a.allianceId}/members`} className="text-slate-500 hover:text-slate-300">
+                Manage members →
+              </Link>
+              <Link to={`/admin/alliances/${a.allianceId}/settings`} className="text-slate-500 hover:text-slate-300">
+                Channel setup →
+              </Link>
+              <Link to={`/admin/alliances/${a.allianceId}/notifications`} className="text-slate-500 hover:text-slate-300">
+                Notifications →
+              </Link>
+              <Link to={`/admin/alliances/${a.allianceId}/custom-events`} className="text-slate-500 hover:text-slate-300">
+                Custom events →
+              </Link>
+              <Link to={`/admin/alliances/${a.allianceId}/schedule-boards`} className="text-slate-500 hover:text-slate-300">
+                Schedule boards →
+              </Link>
+            </div>
+          </Card>
         ))}
       </div>
     </Layout>

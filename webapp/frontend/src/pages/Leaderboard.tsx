@@ -9,6 +9,7 @@ import {
   type VaultLeaderboardEntry,
   type CapitolLeaderboardEntry,
 } from "../api/client";
+import { ErrorState, LoadingState } from "../components/ui";
 
 type Kind = "vault" | "capitol";
 
@@ -87,11 +88,11 @@ export default function Leaderboard() {
         </div>
       )}
 
-      {isLoading && <p className="text-slate-400">Loading…</p>}
-      {error && <p className="text-red-400">Couldn't load the leaderboard.</p>}
+      {isLoading && <LoadingState />}
+      {error && <ErrorState message="Couldn't load the leaderboard." />}
 
       {data && (
-        <div className="overflow-hidden rounded-lg border border-slate-800">
+        <div className="overflow-x-auto rounded-lg border border-slate-800">
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-left text-slate-400">
               <tr>

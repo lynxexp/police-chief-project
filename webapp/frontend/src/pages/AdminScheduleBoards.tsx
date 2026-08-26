@@ -9,6 +9,7 @@ import {
   getSchedulePreview,
   type ScheduleBucketKey,
 } from "../api/client";
+import { Card, EmptyState, ErrorState, LoadingState, SectionHeading } from "../components/ui";
 
 const BUCKET_LABELS: { key: ScheduleBucketKey; label: string; badge: string }[] = [
   { key: "imminent", label: "Imminent (< 1 hour)", badge: "bg-red-950 text-red-400" },
@@ -93,20 +94,20 @@ export default function AdminScheduleBoards() {
       {guildId && (
         <div className="space-y-6">
           <div>
-            <h2 className="mb-3 text-sm font-medium text-slate-300">Configured boards</h2>
+            <SectionHeading>Configured boards</SectionHeading>
             <p className="mb-3 text-xs text-slate-500">
               Read-only -- board creation, editing, and deletion stay in Discord (the "Schedule Boards"
               menu), since every change there requires posting or editing the pinned message directly.
             </p>
-            {boardsQuery.isLoading && <p className="text-slate-400">Loading…</p>}
-            {boardsQuery.error && <p className="text-red-400">Couldn't load schedule boards.</p>}
+            {boardsQuery.isLoading && <LoadingState />}
+            {boardsQuery.error && <ErrorState message="Couldn't load schedule boards." />}
             {boardsQuery.data && boardsQuery.data.length === 0 && (
-              <p className="text-slate-400">No schedule boards configured for this server.</p>
+              <EmptyState icon="📋">No schedule boards configured for this server.</EmptyState>
             )}
             {boardsQuery.data && boardsQuery.data.length > 0 && (
               <div className="space-y-2">
                 {boardsQuery.data.map((b) => (
-                  <div key={b.id} className="rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">
+                  <Card key={b.id} className="p-3 text-sm">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                       <span className="font-medium">
                         {b.boardType === "server" ? "Server-wide" : "Channel"} board
@@ -126,103 +127,115 @@ export default function AdminScheduleBoards() {
                       {b.filterTimeRange && <span>Within {b.filterTimeRange}h</span>}
                       {b.lastUpdated && <span>Updated {new Date(b.lastUpdated).toLocaleString()}</span>}
                     </div>
-                  </div>
+                  </Card>
                 ))}
               </div>
             )}
           </div>
 
           <div className="border-t border-slate-800 pt-6">
-            <h2 className="mb-3 text-sm font-medium text-slate-300">Live preview</h2>
+            <SectionHeading>Live preview</SectionHeading>
             <p className="mb-3 text-xs text-slate-500">
               Runs the same imminent/soon/upcoming grouping a real board's embed would, live against
               current notifications -- pick filters to see what a board configured this way would show
               right now.
             </p>
 
-            <div className="mb-4 grid max-w-2xl grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm sm:grid-cols-3">
+            <Card className="mb-4 grid max-w-2xl grid-cols-2 gap-3 text-sm sm:grid-cols-3">
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Scope</label>
-                <select
-                  value={boardType}
-                  onChange={(e) => {
-                    setBoardType(e.target.value as "server" | "channel");
-                    setPage(0);
-                  }}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5"
-                >
-                  <option value="server">Server-wide</option>
-                  <option value="channel">One channel</option>
-                </select>
+                <label className="mb-1 block text-xs text-slate-400">
+                  Scope
+                  <select
+                    value={boardType}
+                    onChange={(e) => {
+                      setBoardType(e.target.value as "server" | "channel");
+                      setPage(0);
+                    }}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                  >
+                    <option value="server">Server-wide</option>
+                    <option value="channel">One channel</option>
+                  </select>
+                </label>
               </div>
               {boardType === "channel" && (
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">Channel</label>
-                  <select
-                    value={targetChannelId}
-                    onChange={(e) => {
-                      setTargetChannelId(e.target.value);
-                      setPage(0);
-                    }}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5"
-                  >
-                    <option value="">— select —</option>
-                    {channelsQuery.data?.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        #{c.name}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Channel
+                    <select
+                      value={targetChannelId}
+                      onChange={(e) => {
+                        setTargetChannelId(e.target.value);
+                        setPage(0);
+                      }}
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                    >
+                      <option value="">— select —</option>
+                      {channelsQuery.data?.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          #{c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
               )}
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Max events</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={maxEvents}
-                  onChange={(e) => {
-                    setMaxEvents(Number(e.target.value));
-                    setPage(0);
-                  }}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5"
-                />
+                <label className="mb-1 block text-xs text-slate-400">
+                  Max events
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={maxEvents}
+                    onChange={(e) => {
+                      setMaxEvents(Number(e.target.value));
+                      setPage(0);
+                    }}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                  />
+                </label>
               </div>
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Timezone</label>
-                <input
-                  value={timezone}
-                  onChange={(e) => {
-                    setTimezone(e.target.value);
-                    setPage(0);
-                  }}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5"
-                />
+                <label className="mb-1 block text-xs text-slate-400">
+                  Timezone
+                  <input
+                    value={timezone}
+                    onChange={(e) => {
+                      setTimezone(e.target.value);
+                      setPage(0);
+                    }}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                  />
+                </label>
               </div>
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Filter name (comma-separated)</label>
-                <input
-                  value={filterName}
-                  onChange={(e) => {
-                    setFilterName(e.target.value);
-                    setPage(0);
-                  }}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5"
-                />
+                <label className="mb-1 block text-xs text-slate-400">
+                  Filter name (comma-separated)
+                  <input
+                    value={filterName}
+                    onChange={(e) => {
+                      setFilterName(e.target.value);
+                      setPage(0);
+                    }}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                  />
+                </label>
               </div>
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Within next N hours</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={filterTimeRangeHours}
-                  onChange={(e) => {
-                    setFilterTimeRangeHours(e.target.value);
-                    setPage(0);
-                  }}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5"
-                />
+                <label className="mb-1 block text-xs text-slate-400">
+                  Within next N hours
+                  <input
+                    type="number"
+                    min={1}
+                    value={filterTimeRangeHours}
+                    onChange={(e) => {
+                      setFilterTimeRangeHours(e.target.value);
+                      setPage(0);
+                    }}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                  />
+                </label>
               </div>
               <label className="flex items-center gap-2 text-xs text-slate-300">
                 <input
@@ -260,10 +273,10 @@ export default function AdminScheduleBoards() {
                 />
                 Hide "Daily Reset"
               </label>
-            </div>
+            </Card>
 
-            {previewQuery.isLoading && <p className="text-slate-400">Loading preview…</p>}
-            {previewQuery.error && <p className="text-red-400">Couldn't load preview.</p>}
+            {previewQuery.isLoading && <LoadingState label="Loading preview…" />}
+            {previewQuery.error && <ErrorState message="Couldn't load preview." />}
             {previewQuery.data && previewQuery.data.isEmpty && (
               <p className="text-slate-400">No upcoming events match these filters.</p>
             )}
