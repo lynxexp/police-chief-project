@@ -64,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error ?? `request to ${path} failed (${res.status})`);
+    throw new ApiError(res.status, body.message ?? body.error ?? `request to ${path} failed (${res.status})`);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -285,6 +285,36 @@ export interface CalendarResponse {
 
 export function getAllianceCalendar(allianceId: number, rangeStart: string, rangeEnd: string): Promise<CalendarResponse> {
   return request(`/alliance/${allianceId}/calendar?rangeStart=${rangeStart}&rangeEnd=${rangeEnd}`);
+}
+
+/** Fetches (minting on first call) this user's calendar-feed token -- see
+ * routes/calendarFeed.ts. Shared across every alliance the user can view;
+ * the subscribe URL itself is per-alliance (the token is per-user). */
+export async function getCalendarFeedToken(): Promise<string> {
+  const res = await request<{ token: string }>("/member/calendar-feed-token");
+  return res.token;
+}
+
+/** Issues a fresh token, invalidating any URL built from the old one --
+ * for a leaked link or a device that's no longer trusted. */
+export async function regenerateCalendarFeedToken(): Promise<string> {
+  const res = await request<{ token: string }>("/member/calendar-feed-token/regenerate", { method: "POST" });
+  return res.token;
+}
+
+/** Absolute https:// URL for this alliance's subscribable feed -- an
+ * absolute URL (not the relative paths every other client.ts function
+ * uses) because it's handed to an external calendar app, not fetched by
+ * this app itself. */
+export function getCalendarFeedUrl(allianceId: number, token: string): string {
+  return `${window.location.origin}/api/alliance/${allianceId}/calendar.ics?token=${encodeURIComponent(token)}`;
+}
+
+/** Same feed, as a webcal:// URL -- triggers a native "subscribe to
+ * calendar" flow in Apple Calendar/Outlook when opened directly, instead
+ * of just downloading the file the way https:// would. */
+export function getCalendarFeedWebcalUrl(allianceId: number, token: string): string {
+  return `webcal://${window.location.host}/api/alliance/${allianceId}/calendar.ics?token=${encodeURIComponent(token)}`;
 }
 
 function buildRangeQuery(range?: { from?: string; to?: string; trap?: number }): string {
@@ -601,8 +631,8 @@ export function removeAllianceIdChannel(allianceId: number, channelId: string): 
 }
 
 // ---------------------------------------------------------------------------
-// Bot operations (see routes/backups.ts) -- backup creation + listing only,
-// Owner-only. No restore endpoint exists, deliberately.
+// Bot operations (see routes/backups.ts) -- backup creation, listing, and
+// restore. Every write here is Owner-only.
 // ---------------------------------------------------------------------------
 
 export interface BackupFile {
@@ -617,6 +647,70 @@ export function getBackups(): Promise<BackupFile[]> {
 
 export function createBackup(): Promise<{ ok: true; filename: string }> {
   return request("/admin/backups", { method: "POST" });
+}
+
+/** A plain same-origin URL, not a request() call -- meant for a plain
+ * `<a href>` so the browser handles the download natively (streaming,
+ * progress, save-as) using the session cookie it already sends on any
+ * same-origin navigation. No CSRF token needed: this is a GET, and only
+ * mutating methods carry one (see request()'s doc comment). */
+export function getBackupDownloadUrl(name: string): string {
+  return `/api/admin/backups/${encodeURIComponent(name)}`;
+}
+
+export interface RestoreValidation {
+  token: string;
+  restoredNames: string[];
+  missingFromZip: string[];
+  totalSizeBytes: number;
+}
+
+/** Uploads + validates a backup zip -- nothing under db/ is touched by
+ * this call. Bypasses the shared `request()` helper: a file upload needs
+ * `multipart/form-data` with a browser-generated boundary, which breaks
+ * if Content-Type is set manually the way request() does for JSON. */
+export async function validateRestoreZip(file: File, password: string): Promise<RestoreValidation> {
+  const form = new FormData();
+  form.append("file", file);
+  if (password) form.append("password", password);
+
+  const headers: Record<string, string> = {};
+  if (csrfToken) headers["x-csrf-token"] = csrfToken;
+
+  const res = await fetch("/api/admin/backups/restore/validate", {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: form,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(res.status, body.message ?? body.error ?? "Validation failed.");
+  }
+  return body as RestoreValidation;
+}
+
+export interface RestoreConfirmResult {
+  ok: true;
+  safetyBackupFilename: string;
+  restoredNames: string[];
+}
+
+/** Applies a previously-validated restore. On success, the backend
+ * deliberately exits its process afterward (see routes/backups.ts) --
+ * this process no longer serves fresh data once this resolves. */
+export function confirmRestore(token: string): Promise<RestoreConfirmResult> {
+  return request<RestoreConfirmResult>("/admin/backups/restore/confirm", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function cancelRestore(token: string): Promise<{ ok: true }> {
+  return request("/admin/backups/restore/cancel", {
+    method: "DELETE",
+    body: JSON.stringify({ token }),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -905,10 +999,13 @@ export interface CustomEventSummary {
   recurrenceType: string | null;
   recurrenceInterval: number | null;
   reminderOffsets: number[];
-  channelId: string;
+  // null when notificationsEnabled is false -- a calendar-only event has
+  // no channel to post to.
+  channelId: string | null;
   createdBy: string;
   createdAt: string | null;
   nextOccurrence: string | null;
+  notificationsEnabled: boolean;
 }
 
 export interface CustomEventMaterializedNotification {
@@ -922,7 +1019,15 @@ export interface CustomEventMaterializedNotification {
 }
 
 export interface CustomEventDetail extends Omit<CustomEventSummary, "nextOccurrence"> {
+  // Best-effort Discord display name for createdBy -- null if the lookup
+  // failed or the user has no cached profile; fall back to the raw id.
+  createdByName: string | null;
   materializedNotification: CustomEventMaterializedNotification | null;
+  // null when notificationsEnabled is false -- nothing is materialized,
+  // so there's no message/embed to show.
+  messageKind: "plain" | "embed" | null;
+  message: string | null;
+  embed: NotificationEmbed | null;
 }
 
 export interface CustomEventInput {
@@ -933,12 +1038,16 @@ export interface CustomEventInput {
   minute: number;
   recurrenceType: string;
   recurrenceInterval: number;
-  channelId: string;
+  // Off = calendar-only event -- every field below is ignored/unneeded.
+  notificationsEnabled: boolean;
+  channelId?: string;
   channelName?: string | null;
-  notificationType: number;
+  mentionType?: string;
+  notificationType?: number;
   customTimes?: number[];
-  mentionType: string;
+  messageKind?: "plain" | "embed";
   message?: string;
+  embed?: NotificationEmbed;
 }
 
 export function getCustomEvents(guildId: string): Promise<CustomEventSummary[]> {
@@ -974,80 +1083,6 @@ export function updateCustomEvent(guildId: string, id: number, input: CustomEven
 
 export function deleteCustomEvent(guildId: string, id: number): Promise<{ ok: true }> {
   return request(`/admin/guilds/${guildId}/custom-events/${id}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Notification templates (Stage 7f) -- bot-wide (no guild concept),
-// Owner/Global only, matching Theming's precedent. Built as full CRUD on
-// the web by deliberate choice: the bot itself has no way to ever create
-// a template row (see routes/templates.ts's doc comment) -- the web is
-// the actual way this table gets populated and used.
-// ---------------------------------------------------------------------------
-
-export interface TemplateRepeatConfig {
-  type: "interval" | "fixed_days";
-  minutes?: number;
-  days?: number[];
-}
-
-export interface TemplateSummary {
-  templateId: number;
-  templateName: string;
-  eventType: string | null;
-  description: string | null;
-  notificationType: number | null;
-  embedTitle: string | null;
-  createdBy: string | null;
-  createdAt: string | null;
-}
-
-export interface TemplateDetail extends TemplateSummary {
-  customTimes: number[] | null;
-  repeatConfig: TemplateRepeatConfig | null;
-  embedDescription: string | null;
-  embedColor: number | null;
-  embedImageUrl: string | null;
-  embedThumbnailUrl: string | null;
-  footer: string | null;
-  author: string | null;
-  mentionMessage: string | null;
-}
-
-export interface TemplateInput {
-  templateName: string;
-  eventType?: string | null;
-  description?: string | null;
-  notificationType?: number | null;
-  customTimes?: number[];
-  repeatConfig?: TemplateRepeatConfig | null;
-  embedTitle?: string | null;
-  embedDescription?: string | null;
-  embedColor?: number | null;
-  embedImageUrl?: string | null;
-  embedThumbnailUrl?: string | null;
-  footer?: string | null;
-  author?: string | null;
-  mentionMessage?: string | null;
-}
-
-export function getTemplates(): Promise<TemplateSummary[]> {
-  return request("/admin/templates");
-}
-
-export function getTemplate(id: number): Promise<TemplateDetail> {
-  return request(`/admin/templates/${id}`);
-}
-
-export function createTemplate(input: TemplateInput): Promise<{ ok: true; id: number }> {
-  return request("/admin/templates", { method: "POST", body: JSON.stringify(input) });
-}
-
-export function updateTemplate(id: number, input: TemplateInput): Promise<{ ok: true }> {
-  return request(`/admin/templates/${id}`, { method: "PATCH", body: JSON.stringify(input) });
-}
-
-export function deleteTemplate(id: number): Promise<{ ok: true }> {
-  return request(`/admin/templates/${id}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------

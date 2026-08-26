@@ -1,8 +1,17 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useOutletContext, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
-import { getAllianceCalendar, type CalendarEvent } from "../api/client";
+import {
+  getAllianceCalendar,
+  getCalendarFeedToken,
+  getCalendarFeedUrl,
+  getCalendarFeedWebcalUrl,
+  regenerateCalendarFeedToken,
+  type AuthContext,
+  type CalendarEvent,
+} from "../api/client";
+import { Badge, buttonPrimary, buttonSecondary, Card, ErrorState } from "../components/ui";
 
 const WEEKDAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -33,11 +42,45 @@ function buildMonthGrid(monthStart: Date): Date[] {
 }
 
 export default function CalendarPage() {
+  const ctx = useOutletContext<AuthContext>();
   const { allianceId: allianceIdParam } = useParams<{ allianceId: string }>();
   const allianceId = Number(allianceIdParam);
+  const queryClient = useQueryClient();
 
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [showSubscribe, setShowSubscribe] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const feedUrlInputRef = useRef<HTMLInputElement>(null);
+
+  const feedTokenQuery = useQuery({
+    queryKey: ["calendar-feed-token"],
+    queryFn: getCalendarFeedToken,
+    enabled: showSubscribe,
+    staleTime: Infinity,
+  });
+
+  const regenerateTokenMutation = useMutation({
+    mutationFn: regenerateCalendarFeedToken,
+    onSuccess: (token) => {
+      queryClient.setQueryData(["calendar-feed-token"], token);
+      setCopiedUrl(null);
+    },
+  });
+
+  const feedUrl = feedTokenQuery.data ? getCalendarFeedUrl(allianceId, feedTokenQuery.data) : null;
+  const webcalUrl = feedTokenQuery.data ? getCalendarFeedWebcalUrl(allianceId, feedTokenQuery.data) : null;
+
+  function copyFeedUrl() {
+    if (!feedUrl) return;
+    // Clipboard access can be denied (browser setting, permissions
+    // policy, non-HTTPS context) -- fall back to selecting the text
+    // field so the link is still one action away from a manual copy.
+    navigator.clipboard.writeText(feedUrl).then(
+      () => setCopiedUrl(feedUrl),
+      () => feedUrlInputRef.current?.select(),
+    );
+  }
 
   const grid = useMemo(() => buildMonthGrid(viewMonth), [viewMonth]);
   const rangeStart = toLocalDateKey(grid[0]!);
@@ -64,9 +107,28 @@ export default function CalendarPage() {
   const selectedEvents = selectedDateKey ? (eventsByDate.get(selectedDateKey) ?? []) : [];
 
   return (
-    <Layout title="Event calendar" backTo={{ to: `/alliance/${allianceId}`, label: "Alliance overview" }}>
+    <Layout
+      title="Event calendar"
+      backTo={{ to: `/alliance/${allianceId}`, label: "Alliance overview" }}
+      actions={
+        ctx.tier !== "none" && (
+          <Link
+            to={`/admin/alliances/${allianceId}/custom-events/new`}
+            className="inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+          >
+            + New event
+          </Link>
+        )
+      }
+    >
       {calendarQuery.data && !calendarQuery.data.guildId && (
         <p className="mb-4 text-slate-400">This alliance has no linked Discord server.</p>
+      )}
+
+      {ctx.tier !== "none" && (
+        <p className="mb-4 -mt-2 text-xs text-slate-500">
+          Events on this calendar come from Custom Events and Notifications, configured here.
+        </p>
       )}
 
       <div className="mb-4 flex items-center gap-3">
@@ -99,9 +161,77 @@ export default function CalendarPage() {
           Today
         </button>
         {calendarQuery.isFetching && <span className="text-xs text-slate-500">Loading…</span>}
+        <button
+          onClick={() => setShowSubscribe((v) => !v)}
+          className={`${buttonSecondary} ml-auto`}
+        >
+          📅 Subscribe on your device
+        </button>
       </div>
 
-      {calendarQuery.error && <p className="mb-4 text-red-400">Couldn't load the calendar.</p>}
+      {showSubscribe && (
+        <Card className="mb-4">
+          <h2 className="mb-1 text-sm font-medium text-slate-300">Add this calendar to your device</h2>
+          <p className="mb-4 text-xs text-slate-500">
+            Subscribing keeps upcoming events synced to your phone or computer's own calendar app, so you can use
+            its normal reminder/alert features. The link below is personal to you — don't share it.
+          </p>
+
+          {feedTokenQuery.isLoading && <p className="text-sm text-slate-500">Loading your subscribe link…</p>}
+          {feedTokenQuery.error && <ErrorState message="Couldn't load your subscribe link." />}
+
+          {feedUrl && webcalUrl && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <a href={webcalUrl} className={buttonPrimary}>
+                  Add to Apple Calendar / Outlook
+                </a>
+                <button onClick={copyFeedUrl} className={buttonSecondary}>
+                  {copiedUrl === feedUrl ? "Copied!" : "Copy link for Google Calendar"}
+                </button>
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs text-slate-500">
+                  Google Calendar doesn't support one-click subscribe links — open Google Calendar, go to{" "}
+                  <span className="text-slate-400">Other calendars → From URL</span>, and paste the copied link.
+                </p>
+                <input
+                  ref={feedUrlInputRef}
+                  readOnly
+                  value={feedUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-400"
+                />
+              </div>
+
+              <div className="border-t border-slate-800 pt-3">
+                <button
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Generate a new link? Your current link will stop working on any device it's already added to.",
+                      )
+                    ) {
+                      regenerateTokenMutation.mutate();
+                    }
+                  }}
+                  disabled={regenerateTokenMutation.isPending}
+                  className={buttonSecondary}
+                >
+                  {regenerateTokenMutation.isPending ? "Generating…" : "Generate new link"}
+                </button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {calendarQuery.error && (
+        <div className="mb-4">
+          <ErrorState message="Couldn't load the calendar." />
+        </div>
+      )}
 
       <div className="grid grid-cols-7 gap-1 text-xs">
         {WEEKDAY_HEADERS.map((d) => (
@@ -149,7 +279,7 @@ export default function CalendarPage() {
       </div>
 
       {selectedDateKey && (
-        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <Card className="mt-6">
           <h2 className="mb-3 text-sm font-medium text-slate-300">
             {new Date(`${selectedDateKey}T00:00:00`).toLocaleDateString(undefined, {
               weekday: "long",
@@ -171,15 +301,12 @@ export default function CalendarPage() {
                   </span>
                   <span>{e.icon}</span>
                   <span className={e.isPast ? "text-slate-400" : "text-slate-200"}>{e.name}</span>
-                  {e.isPast && (
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">Past</span>
-                  )}
-                  {e.channelId && <span className="text-xs text-slate-500">#{e.channelId}</span>}
+                  {e.isPast && <Badge>Past</Badge>}
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Card>
       )}
     </Layout>
   );

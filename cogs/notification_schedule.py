@@ -916,7 +916,16 @@ class NotificationSchedule(commands.Cog):
             event_time_str = next_time_tz.strftime('%H:%M')
             event_date_str = next_time_tz.strftime('%b %d')
 
-            # Extract notification name
+            # Extract notification name -- unwrap CUSTOM_TIMES: first (custom
+            # events always carry this prefix), matching the same idiom used
+            # at send time (process_notification) and in _format_paused_line();
+            # this branch used to skip that step and fall through to the
+            # generic 30-char-truncate case, showing raw "CUSTOM_TIMES:N-N|"
+            # encoding on real schedule boards for every custom event.
+            if description.startswith("CUSTOM_TIMES:"):
+                parts = description.split("|", 1)
+                description = parts[1] if len(parts) > 1 else ""
+
             if "EMBED_MESSAGE:" in description:
                 # Get embed title
                 self.cursor.execute("""

@@ -94,6 +94,18 @@ are greyed out; future ones are highlighted. Navigate months with **Prev** /
 view in Discord, since the bot posts reminders as they happen rather than
 showing a browsable calendar.
 
+**Subscribe on your device** — click this button to add the alliance's
+upcoming events to your phone or computer's own calendar app (Apple
+Calendar, Outlook, Google Calendar), so you can use its normal reminder
+alerts instead of relying on Discord. You get a **webcal://** link for a
+one-click subscribe in Apple Calendar/Outlook, and a plain **https://** link
+to paste into Google Calendar's **Other calendars → From URL**. The link is
+personal to you (it's tied to your account, not the alliance) — don't share
+it. Subscribed calendars only carry upcoming events (not past ones) and
+refresh automatically every few hours as your calendar app re-polls it. If a
+link leaks or you no longer trust a device it's on, click **Generate new
+link** — the old link stops working immediately.
+
 ### Gift codes
 
 Top nav → **Gift codes** (visible to everyone, no admin tier needed). Lists
@@ -111,8 +123,8 @@ authorized" response if you navigate there directly.
 
 The **Admin** link (top nav, visible to any admin tier) takes you to the
 admin home page: the list of alliances you can manage, plus (Global-tier and
-up) quick links to admins, audit log, gift codes, themes, templates, and
-(Owner-only) backups.
+up) quick links to admins, audit log, gift codes, themes, and (Owner-only)
+backups.
 
 ### Alliance members
 
@@ -162,8 +174,8 @@ confirming, same as the equivalent Discord flow.
   transfer, who did it, and before/after state. This mirrors the Discord
   bot's own permission audit trail exactly.
 - **Activity log** — a broader dashboard-only log covering notification,
-  template, theme, backup, gift code, and custom event create/update/delete
-  actions performed through the web dashboard. This is *not* a full replica
+  theme, backup, gift code, and custom event create/update/delete actions
+  performed through the web dashboard. This is *not* a full replica
   of everything the Discord bot does — it only records actions taken through
   this web dashboard specifically.
 
@@ -190,11 +202,34 @@ announcement command.
 ### Backups
 
 `Admin → Backups` (**Owner tier only**). Lists existing backups (name, size,
-created time) and lets you trigger a new one. There is **no restore button
-here, deliberately** — restoring a backup is a destructive, high-blast-radius
-action that stays Discord/manual-only (`/restore`, Owner tier), matching the
-[Owner Guide](owner-guide.md#backup--restore). This page only ever adds new
-snapshots, never touches existing data.
+created time) — click a name to download it. Backups are deleted
+automatically 7 days after creation (shown in the audit log's Activity tab
+as `backup_expired`), whether they were created here or via the bot's own
+`/settings` → **Backup** menu — both write into the same folder.
+
+**Create a backup** snapshots every database file into a new zip, the same
+way the bot's own backup system does.
+
+**Restore from a backup** replaces ALL current data with the contents of a
+backup zip. This is the highest-blast-radius action on the whole dashboard,
+so it's built with several layers of safety:
+
+- Upload a `.zip` and it's validated first — checked for safe file names and
+  per-file database integrity — before anything is touched. You then see
+  exactly which files will be restored (and which current files aren't in
+  the backup and will be left alone) before deciding whether to continue.
+- Confirming requires typing `RESTORE` into a text field, on top of the
+  Owner-tier gate.
+- A fresh safety backup of your **current** data is taken automatically
+  immediately before the restore, so a bad restore can itself be undone by
+  restoring that safety backup afterward.
+- AES password-protected backups (the kind Discord's `/backup` can create
+  with a password) aren't supported here — use Discord's `/restore` for
+  those instead.
+- Once the restore finishes, **both this web server and the Discord bot
+  need to be restarted manually** to actually load the restored data —
+  neither happens automatically. The page tells you this plainly when a
+  restore completes.
 
 ### Theming
 
@@ -250,9 +285,6 @@ reminder messages posted to a channel.
   or a full Discord embed (title, description, color, image, thumbnail,
   footer, author — with the same live preview component the theme editor
   uses).
-- **Apply a template** (if any exist) pre-fills the reminder offsets, repeat
-  config, and embed from a saved template — see [Templates](#templates).
-  You still pick the channel, date/time, and mention yourself.
 
 **Editing an existing one**: same fields, reachable from the notification's
 detail page, plus **Enable/Disable** and **Delete**. A notification's send
@@ -262,21 +294,6 @@ Notifications created via the [custom events](#custom-events) flow, or using
 custom per-offset times, show up in the list but aren't editable through this
 basic form — edit those through Custom Events instead, matching how the bot's
 own basic notification editor works.
-
-### Templates
-
-`Admin → Templates` (Global tier and up — templates aren't tied to one
-alliance). A template stores reusable notification *content* — reminder
-offsets, repeat pattern, and embed/message — for applying to new
-notifications later. **Templates deliberately have no date or time field**:
-the same template gets reused across many different real occurrences, each
-with its own start time chosen when you actually create that notification
-(see [Notifications](#notifications) above). If you need a reminder that
-always fires at the same fixed time with no manual re-creation, use a
-[Custom event](#custom-events) instead.
-
-Create, edit, or delete templates here; apply one from the notification
-creation screen's **Apply a template** dropdown.
 
 ### Custom events
 
@@ -291,10 +308,15 @@ calendar-aware recurrence:
   or 29th in February), unlike a notification's own "Custom interval"
   repeat.
 
-Each custom event also has reminder offsets, a target channel, mention type,
-and message, exactly like a regular notification — creating or editing one
-automatically creates/updates the underlying notification that actually
-fires, so you never manage those two things separately.
+**Post Discord notifications: On/Off** — every custom event has this toggle.
+With it **on**, you also set reminder offsets, a target channel, mention
+type, and message (plain text or embed), exactly like a regular notification
+— creating or editing the event automatically creates/updates the
+underlying notification that actually fires, so you never manage those two
+things separately. With it **off**, none of those fields apply: the event
+still appears on the [Event calendar](#event-calendar) for members to see (and still
+recurs on its schedule), but nothing gets posted to Discord — useful for
+tracking a date without spamming a channel about it.
 
 **Attendance suggestions**: if your alliance has logged Vault Trap or
 Capitol War attendance data but there's no custom event covering it yet, a
@@ -329,7 +351,7 @@ coordinate. What this page *does* give you:
 | Your profile, alliance overview, leaderboards, attendance, member detail, calendar | Any signed-in member with a linked ID or alliance membership |
 | Gift codes (view) | Anyone signed in |
 | Admin home, alliance members, channel setup | Alliance tier and up (for their assigned alliance(s)) |
-| Notifications, templates, custom events, schedule boards | Server tier and up (guild-wide settings) |
+| Notifications, custom events, schedule boards | Server tier and up (guild-wide settings) |
 | Permissions, audit log, gift codes (manage), themes | Global tier and up |
 | Backups | Owner only |
 

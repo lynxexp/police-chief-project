@@ -5,12 +5,12 @@
  * custom-event calendar instead"). Guild-scoped (canManageGuild, Server
  * tier+), same as routes/notifications.ts.
  *
- * A custom_events row is the source of truth; it is NOT independently
- * meaningful without its "materialized" vault_notifications row -- the
- * actual reminder that fires on schedule. Every create/edit here
- * re-materializes that row exactly the way
- * notification_wizard.py's save_custom_event() does: delete whatever
- * was previously materialized for this event, then insert a fresh
+ * A custom_events row is the source of truth. When notificationsEnabled is
+ * true, it's also NOT independently meaningful without its "materialized"
+ * vault_notifications row -- the actual reminder that fires on schedule.
+ * Every create/edit here re-materializes that row exactly the way
+ * notification_wizard.py's save_custom_event() does: delete whatever was
+ * previously materialized for this event, then (if enabled) insert a fresh
  * notification_type=6 row with a CUSTOM_TIMES:-encoded description,
  * repeat_minutes derived from recurrence_type (daily/weekly -> a literal
  * minutes interval; monthly -> the -2 sentinel, advanced via
@@ -20,15 +20,33 @@
  * notification CRUD in routes/notifications.ts deliberately excludes
  * both, matching the source (a custom event's materialized reminder
  * isn't independently editable via the basic modal flow there either).
+ *
+ * notificationsEnabled=false means a calendar-only event: no channel, no
+ * reminders, nothing materialized. See notifications/customEventMaterialize.ts
+ * and routes/calendar.ts (which computes such an event's occurrences
+ * directly from its recurrence fields, since there's no notification
+ * trail to derive them from).
+ *
+ * A "Templates" concept (reusable content linked to an event) briefly
+ * existed here and was removed -- it turned out to make the relationship
+ * between events and their content more confusing, not less, especially
+ * once it behaved differently here than it did for basic notifications.
+ * Content is inline-only again, same as before that existed.
  */
 import type { FastifyInstance } from "fastify";
 import { eventsDb, allianceDb, vaultDataDb, capitolWarDb } from "../db/connections.js";
 import { snowflake } from "../db/snowflake.js";
 import { resolveAuthContext, canManageGuild } from "../auth/context.js";
+import { fetchDiscordUserById } from "../auth/oauth.js";
 import { calculateNextOccurrence } from "../notifications/nextOccurrence.js";
-import { encodeCustomTimesDescription } from "../notifications/description.js";
+import { decodeDescription } from "../notifications/description.js";
 import { localizedIsoString, toUtcIsoString, normalizeStoredUtcTimestamp } from "../notifications/timezone.js";
 import { deleteNotificationRow } from "../notifications/deleteNotification.js";
+import { embedSchema, type EmbedInput } from "../notifications/embed.js";
+import {
+  materializeCustomEventNotification,
+  reminderOffsetsFor,
+} from "../notifications/customEventMaterialize.js";
 import { logAppAction } from "../audit.js";
 
 const guildIdParam = {
@@ -73,8 +91,7 @@ const customTimesSchema = {
 const customEventBody = {
   type: "object",
   required: [
-    "name", "date", "hour", "minute", "recurrenceType", "recurrenceInterval",
-    "channelId", "notificationType", "mentionType",
+    "name", "date", "hour", "minute", "recurrenceType", "recurrenceInterval", "notificationsEnabled",
   ],
   properties: {
     name: { type: "string", minLength: 1, maxLength: 100 },
@@ -86,112 +103,71 @@ const customEventBody = {
     minute: { type: "integer", minimum: 0, maximum: 59 },
     recurrenceType: { type: "string", pattern: RECURRENCE_TYPE_PATTERN },
     recurrenceInterval: { type: "integer", minimum: 1 },
+    // Off = calendar-only event -- everything below is ignored/unneeded.
+    notificationsEnabled: { type: "boolean" },
     channelId: { type: "string", pattern: "^[0-9]+$" },
     channelName: { type: ["string", "null"] },
-    // 1-5 = preset reminder offsets; 6 = customTimes (required then).
-    notificationType: { type: "integer", minimum: 1, maximum: 6 },
-    customTimes: customTimesSchema,
     mentionType: { type: "string", pattern: MENTION_TYPE_PATTERN },
+    // 1-5 = preset reminder offsets; 6 = customTimes (required then).
+    notificationType: { type: ["integer", "null"], minimum: 1, maximum: 6 },
+    customTimes: customTimesSchema,
+    messageKind: { type: "string", enum: ["plain", "embed"] },
     // Defaults to the wizard's own template ("%i **%n** starts in %t!")
-    // when omitted -- see DEFAULT_CUSTOM_EVENT_MESSAGE below.
+    // when omitted -- see DEFAULT_CUSTOM_EVENT_MESSAGE.
     message: { type: "string", maxLength: 500 },
+    embed: embedSchema,
   },
-  if: { properties: { notificationType: { const: 6 } } },
-  then: { required: ["customTimes"] },
+  allOf: [
+    // Guarded with `required: ["notificationType"]` so an absent
+    // notificationType doesn't vacuously match `properties.notificationType.const`
+    // -- JSON Schema treats a missing property as satisfying any
+    // `properties` constraint on it, same gotcha routes/notifications.ts's
+    // messageKind check already guards against.
+    { if: { required: ["notificationType"], properties: { notificationType: { const: 6 } } }, then: { required: ["customTimes"] } },
+    {
+      // notificationsEnabled is in the top-level `required`, so it's
+      // always present -- no vacuous-match risk here.
+      if: { properties: { notificationsEnabled: { const: true } } },
+      then: {
+        required: ["channelId", "mentionType", "notificationType"],
+        allOf: [
+          {
+            if: { required: ["messageKind"], properties: { messageKind: { const: "embed" } } },
+            then: { required: ["embed"] },
+          },
+        ],
+      },
+    },
+  ],
 } as const;
 
-const DEFAULT_CUSTOM_EVENT_MESSAGE = "%i **%n** starts in %t!";
-
-/** The materialized description is always CUSTOM_TIMES:-encoded here, so
- * an admin-typed message containing one of the OTHER reserved sentinels
- * would get misread by decodeDescription() -- see
- * notifications/description.ts's doc comment on PLAIN_MESSAGE:. */
-function hasReservedMessagePrefix(message: string): boolean {
-  return message.startsWith("PLAIN_MESSAGE:") || message.includes("EMBED_MESSAGE:") || message.startsWith("CUSTOM_TIMES:");
-}
-
-const NOTIFICATION_TYPE_PRESETS: Record<number, number[]> = {
-  1: [30, 10, 5, 0],
-  2: [10, 5, 0],
-  3: [5, 0],
-  4: [5],
-  5: [0],
-};
-
-/** Mirrors CustomEventSession.reminder_offsets(). */
-function reminderOffsetsFor(notificationType: number, customTimes: number[] | undefined): number[] {
-  if (notificationType === 6 && customTimes && customTimes.length > 0) return customTimes;
-  return NOTIFICATION_TYPE_PRESETS[notificationType] ?? [10, 5, 0];
-}
-
-/** Mirrors save_custom_event()'s repeat_minutes derivation exactly. */
-function repeatMinutesForRecurrence(recurrenceType: string, interval: number): number {
-  if (recurrenceType === "daily") return Math.max(1, interval) * 1440;
-  if (recurrenceType === "weekly") return Math.max(1, interval) * 7 * 1440;
-  return -2;
-}
-
-interface MaterializeParams {
-  guildId: string;
-  customEventId: number;
+interface CustomEventBody {
   name: string;
-  firstOccurrenceIso: string;
+  iconUrl?: string | null;
+  date: string;
+  hour: number;
+  minute: number;
   recurrenceType: string;
   recurrenceInterval: number;
-  channelId: string;
-  channelName: string | null;
-  createdBy: string;
-  notificationType: number;
+  notificationsEnabled: boolean;
+  channelId?: string;
+  channelName?: string | null;
+  mentionType?: string;
+  notificationType?: number;
   customTimes?: number[];
-  mentionType: string;
-  message: string;
+  messageKind?: "plain" | "embed";
+  message?: string;
+  embed?: EmbedInput;
 }
 
-/** Drops whatever notification(s) were previously materialized for this
- * custom event, then inserts a fresh one -- mirrors save_custom_event()'s
- * "simplest way to keep the reminder in sync" delete-then-recreate. */
-async function materializeCustomEventNotification(params: MaterializeParams): Promise<void> {
-  const old = await eventsDb
-    .selectFrom("vault_notifications")
-    .select("id")
-    .where("custom_event_id", "=", params.customEventId)
-    .execute();
-  for (const row of old) {
-    await deleteNotificationRow(row.id);
-  }
-
-  const firstOccurrence = new Date(params.firstOccurrenceIso);
-  const nextOcc = calculateNextOccurrence(firstOccurrence, params.recurrenceType, params.recurrenceInterval, new Date());
-  if (!nextOcc) {
-    throw new Error(`calculateNextOccurrence returned null for recurrenceType "${params.recurrenceType}"`);
-  }
-
-  const offsets = reminderOffsetsFor(params.notificationType, params.customTimes);
-  const description = encodeCustomTimesDescription(offsets, params.message);
-  const repeatMinutes = repeatMinutesForRecurrence(params.recurrenceType, params.recurrenceInterval);
-
-  await eventsDb
-    .insertInto("vault_notifications")
-    .values({
-      guild_id: params.guildId,
-      channel_id: params.channelId,
-      channel_name: params.channelName,
-      // Always UTC for custom events -- see save_custom_event()'s
-      // hardcoded `timezone="UTC"`.
-      hour: nextOcc.getUTCHours(),
-      minute: nextOcc.getUTCMinutes(),
-      timezone: "UTC",
-      description,
-      notification_type: 6,
-      mention_type: params.mentionType,
-      repeat_enabled: 1,
-      repeat_minutes: repeatMinutes,
-      created_by: params.createdBy,
-      next_notification: toUtcIsoString(nextOcc),
-      event_type: params.name,
-      custom_event_id: params.customEventId,
-    })
-    .execute();
+/** The materialized description is always CUSTOM_TIMES:-encoded here, so
+ * an admin-typed plain message containing one of the OTHER reserved
+ * sentinels would get misread by decodeDescription() -- see
+ * notifications/description.ts's doc comment on PLAIN_MESSAGE:. Only
+ * applies to the inline plain-message path; an inline embed title isn't
+ * checked, matching routes/notifications.ts. */
+function hasReservedMessagePrefix(message: string): boolean {
+  return message.startsWith("PLAIN_MESSAGE:") || message.includes("EMBED_MESSAGE:") || message.startsWith("CUSTOM_TIMES:");
 }
 
 export default async function customEventRoutes(fastify: FastifyInstance): Promise<void> {
@@ -260,7 +236,7 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
         .select([
           "id", "name", "icon_url", "first_occurrence", "recurrence_type", "recurrence_interval",
           "reminder_offsets", snowflake("channel_id").as("channel_id"),
-          snowflake("created_by").as("created_by"), "created_at",
+          snowflake("created_by").as("created_by"), "created_at", "notifications_enabled",
         ])
         .where("guild_id", "=", guildId)
         .orderBy("name", "asc")
@@ -283,6 +259,7 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
           createdBy: r.created_by,
           createdAt: normalizeStoredUtcTimestamp(r.created_at),
           nextOccurrence: nextOcc ? toUtcIsoString(nextOcc) : null,
+          notificationsEnabled: r.notifications_enabled === null ? true : Boolean(r.notifications_enabled),
         };
       });
     },
@@ -303,7 +280,7 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
         .select([
           "id", "name", "icon_url", "first_occurrence", "recurrence_type", "recurrence_interval",
           "reminder_offsets", snowflake("channel_id").as("channel_id"),
-          snowflake("created_by").as("created_by"), "created_at",
+          snowflake("created_by").as("created_by"), "created_at", "notifications_enabled",
         ])
         .where("id", "=", id)
         .where("guild_id", "=", guildId)
@@ -312,14 +289,47 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
         return reply.code(404).send({ error: "custom_event_not_found" });
       }
 
+      const creator = row.created_by ? await fetchDiscordUserById(row.created_by) : null;
+      const createdByName = creator?.global_name ?? creator?.username ?? null;
+
       const notification = await eventsDb
         .selectFrom("vault_notifications")
         .select([
-          "id", "is_enabled", "mention_type", "notification_type",
+          "id", "is_enabled", "mention_type", "notification_type", "description",
           "next_notification", "last_notification", "auto_disabled_at",
         ])
         .where("custom_event_id", "=", id)
         .executeTakeFirst();
+
+      let messageKind: "plain" | "embed" | null = null;
+      let message: string | null = null;
+      let embed: EmbedInput | null = null;
+      if (notification) {
+        const decoded = decodeDescription(notification.description);
+        if (decoded.kind === "embed") {
+          messageKind = "embed";
+          const embedRow = await eventsDb
+            .selectFrom("vault_notification_embeds")
+            .select(["title", "description", "color", "image_url", "thumbnail_url", "footer", "author", "mention_message"])
+            .where("notification_id", "=", notification.id)
+            .executeTakeFirst();
+          embed = embedRow
+            ? {
+                title: embedRow.title,
+                description: embedRow.description,
+                color: embedRow.color,
+                imageUrl: embedRow.image_url,
+                thumbnailUrl: embedRow.thumbnail_url,
+                footer: embedRow.footer,
+                author: embedRow.author,
+                mentionMessage: embedRow.mention_message,
+              }
+            : null;
+        } else {
+          messageKind = "plain";
+          message = decoded.text;
+        }
+      }
 
       return {
         id: row.id,
@@ -331,7 +341,12 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
         reminderOffsets: row.reminder_offsets ? (JSON.parse(row.reminder_offsets) as number[]) : [],
         channelId: row.channel_id,
         createdBy: row.created_by,
+        createdByName,
         createdAt: normalizeStoredUtcTimestamp(row.created_at),
+        notificationsEnabled: row.notifications_enabled === null ? true : Boolean(row.notifications_enabled),
+        messageKind,
+        message,
+        embed,
         materializedNotification: notification
           ? {
               id: notification.id,
@@ -349,21 +364,7 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
 
   fastify.post<{
     Params: { guildId: string };
-    Body: {
-      name: string;
-      iconUrl?: string | null;
-      date: string;
-      hour: number;
-      minute: number;
-      recurrenceType: string;
-      recurrenceInterval: number;
-      channelId: string;
-      channelName?: string | null;
-      notificationType: number;
-      customTimes?: number[];
-      mentionType: string;
-      message?: string;
-    };
+    Body: CustomEventBody;
   }>(
     "/admin/guilds/:guildId/custom-events",
     { schema: { params: guildIdParam, body: customEventBody }, preHandler: fastify.csrfProtection },
@@ -374,16 +375,16 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
         return reply.code(403).send({ error: "not_guild_admin" });
       }
       const {
-        name, iconUrl, date, hour, minute, recurrenceType, recurrenceInterval,
-        channelId, channelName, notificationType, customTimes, mentionType, message,
+        name, iconUrl, date, hour, minute, recurrenceType, recurrenceInterval, notificationsEnabled,
+        channelId, channelName, notificationType, customTimes, mentionType, messageKind, message, embed,
       } = request.body;
 
-      if (message !== undefined && hasReservedMessagePrefix(message)) {
+      if (notificationsEnabled && messageKind !== "embed" && message !== undefined && hasReservedMessagePrefix(message)) {
         return reply.code(400).send({ error: "message_reserved_prefix" });
       }
 
       const firstOccurrenceIso = localizedIsoString(date, hour, minute, "UTC");
-      const offsets = reminderOffsetsFor(notificationType, customTimes);
+      const offsets = notificationsEnabled ? reminderOffsetsFor(notificationType ?? 0, customTimes) : [];
       const reminderOffsetsJson = JSON.stringify([...offsets].sort((a, b) => b - a));
       const now = new Date().toISOString();
 
@@ -397,9 +398,10 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
           recurrence_type: recurrenceType,
           recurrence_interval: recurrenceInterval,
           reminder_offsets: reminderOffsetsJson,
-          channel_id: channelId,
+          channel_id: notificationsEnabled ? channelId! : null,
           created_by: ctx.discordId,
           created_at: now,
+          notifications_enabled: notificationsEnabled ? 1 : 0,
         })
         .executeTakeFirst();
       const newId = Number(result.insertId);
@@ -411,13 +413,16 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
         firstOccurrenceIso,
         recurrenceType,
         recurrenceInterval,
+        notificationsEnabled,
         channelId,
         channelName: channelName ?? null,
         createdBy: ctx.discordId,
+        mentionType,
         notificationType,
         customTimes,
-        mentionType,
-        message: message?.trim() || DEFAULT_CUSTOM_EVENT_MESSAGE,
+        messageKind,
+        message,
+        embed,
       });
 
       await logAppAction({
@@ -435,21 +440,7 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
 
   fastify.patch<{
     Params: { guildId: string; id: number };
-    Body: {
-      name: string;
-      iconUrl?: string | null;
-      date: string;
-      hour: number;
-      minute: number;
-      recurrenceType: string;
-      recurrenceInterval: number;
-      channelId: string;
-      channelName?: string | null;
-      notificationType: number;
-      customTimes?: number[];
-      mentionType: string;
-      message?: string;
-    };
+    Body: CustomEventBody;
   }>(
     "/admin/guilds/:guildId/custom-events/:id",
     { schema: { params: customEventParams, body: customEventBody }, preHandler: fastify.csrfProtection },
@@ -471,16 +462,16 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
       }
 
       const {
-        name, iconUrl, date, hour, minute, recurrenceType, recurrenceInterval,
-        channelId, channelName, notificationType, customTimes, mentionType, message,
+        name, iconUrl, date, hour, minute, recurrenceType, recurrenceInterval, notificationsEnabled,
+        channelId, channelName, notificationType, customTimes, mentionType, messageKind, message, embed,
       } = request.body;
 
-      if (message !== undefined && hasReservedMessagePrefix(message)) {
+      if (notificationsEnabled && messageKind !== "embed" && message !== undefined && hasReservedMessagePrefix(message)) {
         return reply.code(400).send({ error: "message_reserved_prefix" });
       }
 
       const firstOccurrenceIso = localizedIsoString(date, hour, minute, "UTC");
-      const offsets = reminderOffsetsFor(notificationType, customTimes);
+      const offsets = notificationsEnabled ? reminderOffsetsFor(notificationType ?? 0, customTimes) : [];
       const reminderOffsetsJson = JSON.stringify([...offsets].sort((a, b) => b - a));
 
       await eventsDb
@@ -492,7 +483,8 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
           recurrence_type: recurrenceType,
           recurrence_interval: recurrenceInterval,
           reminder_offsets: reminderOffsetsJson,
-          channel_id: channelId,
+          channel_id: notificationsEnabled ? channelId! : null,
+          notifications_enabled: notificationsEnabled ? 1 : 0,
         })
         .where("id", "=", id)
         .execute();
@@ -504,13 +496,16 @@ export default async function customEventRoutes(fastify: FastifyInstance): Promi
         firstOccurrenceIso,
         recurrenceType,
         recurrenceInterval,
+        notificationsEnabled,
         channelId,
         channelName: channelName ?? null,
         createdBy: ctx.discordId,
+        mentionType,
         notificationType,
         customTimes,
-        mentionType,
-        message: message?.trim() || DEFAULT_CUSTOM_EVENT_MESSAGE,
+        messageKind,
+        message,
+        embed,
       });
 
       await logAppAction({

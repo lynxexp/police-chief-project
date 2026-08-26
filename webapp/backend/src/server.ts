@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import multipart from "@fastify/multipart";
 import { config } from "./config.js";
 import {
   assertBotSchemaIntact,
@@ -14,6 +15,7 @@ import staticPlugin from "./plugins/static.js";
 import authRoutes from "./routes/auth.js";
 import memberRoutes from "./routes/member.js";
 import calendarRoutes from "./routes/calendar.js";
+import calendarFeedRoutes from "./routes/calendarFeed.js";
 import adminRoutes from "./routes/admin.js";
 import giftCodeRoutes from "./routes/giftcodes.js";
 import idChannelRoutes from "./routes/idchannel.js";
@@ -21,7 +23,6 @@ import backupRoutes from "./routes/backups.js";
 import themingRoutes from "./routes/theming.js";
 import notificationRoutes from "./routes/notifications.js";
 import customEventRoutes from "./routes/customEvents.js";
-import templateRoutes from "./routes/templates.js";
 import scheduleBoardRoutes from "./routes/scheduleBoards.js";
 
 async function main(): Promise<void> {
@@ -40,9 +41,15 @@ async function main(): Promise<void> {
   await fastify.register(securityPlugin);
   await fastify.register(sessionPlugin);
   await fastify.register(csrfPlugin);
+  // Restore-zip upload only (routes/backups.ts) -- 500MB matches the bot's
+  // own /restore attachment cap (cogs/bot_backup.py).
+  await fastify.register(multipart, {
+    limits: { fileSize: 500 * 1024 * 1024, files: 1 },
+  });
   await fastify.register(authRoutes, { prefix: "/api/auth" });
   await fastify.register(memberRoutes, { prefix: "/api" });
   await fastify.register(calendarRoutes, { prefix: "/api" });
+  await fastify.register(calendarFeedRoutes, { prefix: "/api" });
   await fastify.register(adminRoutes, { prefix: "/api" });
   await fastify.register(giftCodeRoutes, { prefix: "/api" });
   await fastify.register(idChannelRoutes, { prefix: "/api" });
@@ -50,7 +57,6 @@ async function main(): Promise<void> {
   await fastify.register(themingRoutes, { prefix: "/api" });
   await fastify.register(notificationRoutes, { prefix: "/api" });
   await fastify.register(customEventRoutes, { prefix: "/api" });
-  await fastify.register(templateRoutes, { prefix: "/api" });
   await fastify.register(scheduleBoardRoutes, { prefix: "/api" });
   // Registered last: its SPA-fallback 404 handler must not shadow any
   // /api/* route registered above it.

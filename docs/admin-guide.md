@@ -121,6 +121,12 @@ there's no pre-filled calendar, since Police Chief has no publicly verified
 event schedule. The bot computes each event's next occurrence and posts
 reminders automatically once you've defined it.
 
+Each event has a **Turn Notifications Off/On** toggle. With notifications
+off, the event still recurs and still shows up on the calendar (including
+the member-facing web [Event calendar](webapp-guide.md#event-calendar)), but
+nothing gets posted to Discord — no reminder times, message, or channel to
+set. Turn it back on to configure those and resume posting.
+
 ## Bot theming
 
 `/pimp menu` — customize which emoji the bot uses throughout its menus and

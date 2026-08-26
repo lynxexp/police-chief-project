@@ -15,15 +15,12 @@
  * constraint -- it's pure computation over already-existing
  * vault_notifications rows, safe to expose as a live preview tool.
  *
- * Deliberately preserves known quirks/gaps in the source rather than
- * "fixing" them, per the plan's port-exactly policy for schedule/date
- * math -- notably: monthly custom-event notifications (repeat_minutes
- * == -2) are NEVER expanded here (only > 0 and == -1 are), so they only
- * ever show their single next occurrence; and a CUSTOM_TIMES-encoded
- * description that also contains PLAIN_MESSAGE: is not double-unwrapped
- * in the generic name-extraction branch (see extractEventName's doc
- * comment) -- both are faithful to _format_event_line()'s actual code,
- * not oversights in this port.
+ * Deliberately preserves a known quirk in the source rather than "fixing"
+ * it, per the plan's port-exactly policy for schedule/date math: monthly
+ * custom-event notifications (repeat_minutes == -2) are NEVER expanded
+ * here (only > 0 and == -1 are), so they only ever show their single next
+ * occurrence -- faithful to _format_event_line()'s actual code, not an
+ * oversight in this port.
  */
 import { parseWeekdayRows } from "./weekdays.js";
 import { scheduleTimezoneOffsetMinutes } from "./timezone.js";
@@ -196,22 +193,34 @@ export interface FormattedEvent {
 
 /**
  * Extracts the display name for one event line -- mirrors
- * _format_event_line()'s name-extraction branches exactly, including
- * two faithfully-preserved gaps in the source: a CUSTOM_TIMES-encoded
- * description reaches this function with its "CUSTOM_TIMES:N-N-N|"
- * prefix NOT yet stripped (unlike the send path, this formatter never
- * unwraps it), so it falls into the generic 30-char-truncate branch and
- * can show raw encoding garbage; and PLAIN_MESSAGE: is likewise never
- * stripped here (only CUSTOM_TIMES: at the very start, and
- * EMBED_MESSAGE: as a substring, are recognized) -- neither is "fixed"
- * here, matching the actual embed a real board would post.
+ * _format_event_line()'s name-extraction branches exactly. A
+ * CUSTOM_TIMES-encoded description (every custom event's) is unwrapped
+ * first, matching the same idiom used at send time (process_notification)
+ * and in _format_paused_line() -- this used to be a gap faithfully ported
+ * from the source (which fell into the generic 30-char-truncate branch and
+ * showed raw "CUSTOM_TIMES:N-N|" encoding for every custom event on a real
+ * schedule board), fixed in both places together. PLAIN_MESSAGE: is
+ * likewise never stripped here (only recognized as a substring below) --
+ * that one gap is intentionally preserved, matching the actual embed a
+ * real board would post.
  */
 function extractEventName(notif: ScheduleNotificationRow, lookups: EventLookups, eventTimeInTz: Date): string {
-  const { description, eventType } = notif;
+  let { description } = notif;
+  const { eventType } = notif;
   const emoji = eventType ? (lookups.iconByEventType.get(eventType) ?? lookups.defaultIcon) : lookups.defaultIcon;
   const eventName = eventType || "Event";
   const eventTimeStr = `${String(eventTimeInTz.getUTCHours()).padStart(2, "0")}:${String(eventTimeInTz.getUTCMinutes()).padStart(2, "0")}`;
   const eventDateStr = eventTimeInTz.toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
+
+  if (description.startsWith("CUSTOM_TIMES:")) {
+    // indexOf, not split("|", n) -- JS's split(sep, limit) truncates the
+    // full split rather than stopping after the first separator like
+    // Python's str.split(sep, 1), so it would silently drop the remainder
+    // of a message that itself contains a "|" (see description.ts's
+    // splitOnFirst for the same gotcha).
+    const pipeIdx = description.indexOf("|");
+    description = pipeIdx === -1 ? "" : description.slice(pipeIdx + 1);
+  }
 
   let name: string;
   if (description.includes("EMBED_MESSAGE:")) {

@@ -3,6 +3,7 @@ __pycache__
 db.bak
 db.bak-*
 log
+*.log
 bot_token.txt
 version
 .python-version

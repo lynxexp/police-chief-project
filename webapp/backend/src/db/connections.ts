@@ -152,6 +152,13 @@ export function initWebappSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_app_audit_log_created_at ON app_audit_log(created_at);
     CREATE INDEX IF NOT EXISTS idx_app_audit_log_guild_id ON app_audit_log(guild_id);
+
+    CREATE TABLE IF NOT EXISTS calendar_feed_tokens (
+      discord_id INTEGER PRIMARY KEY,
+      token TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_calendar_feed_tokens_token ON calendar_feed_tokens(token);
   `);
 }
 
@@ -343,6 +350,7 @@ const EXPECTED: ExpectedTable[] = [
     columns: [
       "id", "guild_id", "name", "icon_url", "first_occurrence", "recurrence_type",
       "recurrence_interval", "reminder_offsets", "channel_id", "created_by", "created_at",
+      "notifications_enabled",
     ],
   },
   {
@@ -356,12 +364,6 @@ const EXPECTED: ExpectedTable[] = [
     file: "events.sqlite",
     table: "notification_schedule_boards",
     columns: ["id", "guild_id", "channel_id", "message_id", "board_type", "max_events"],
-  },
-  {
-    db: eventsRaw,
-    file: "events.sqlite",
-    table: "notification_templates",
-    columns: ["template_id", "template_name", "event_type", "is_global"],
   },
 ];
 
@@ -411,18 +413,25 @@ export function assertBotSchemaIntact(): void {
   }
 }
 
+/**
+ * Closes every raw better-sqlite3 handle directly, NOT via the Kysely
+ * wrappers' own `.destroy()`. Kysely's SqliteDriver only opens its
+ * internal reference to the database on the first query it ever runs
+ * (lazy `init()`) -- for any of these files a request handler never
+ * happened to query in this process's lifetime, `driver.destroy()`'s
+ * `this.#db?.close()` is a silent no-op, and the raw OS-level file
+ * handle opened eagerly by openBotDb()/openWebappDb() at module load
+ * stays open indefinitely. Confirmed via restore testing: db-dev-copy
+ * files that no route had queried yet stayed locked (blocking the
+ * restore's file replace with EPERM) even after this function returned,
+ * while the two files an admin-auth check + audit-log write DID touch
+ * closed correctly. Closing the raw handles here is correct regardless
+ * of whether Kysely ever initialized its own reference to them. */
 export async function closeAllConnections(): Promise<void> {
-  await Promise.all([
-    usersDb.destroy(),
-    vaultDataDb.destroy(),
-    capitolWarDb.destroy(),
-    allianceDb.destroy(),
-    settingsDb.destroy(),
-    changesDb.destroy(),
-    giftcodeDb.destroy(),
-    idChannelDb.destroy(),
-    pimpmybotDb.destroy(),
-    eventsDb.destroy(),
-    webappDb.destroy(),
-  ]);
+  for (const raw of [
+    usersRaw, vaultDataRaw, capitolWarRaw, allianceRaw, settingsRaw,
+    changesRaw, giftcodeRaw, idChannelRaw, pimpmybotRaw, eventsRaw, webappRaw,
+  ]) {
+    raw.close();
+  }
 }

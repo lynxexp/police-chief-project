@@ -62,6 +62,13 @@ in the Installation guide — restore is one step of that process, not the
 whole thing (you'll also want **Change Server** and channel reconfiguration
 afterward).
 
+The web dashboard's `Admin → Backups` page (Owner tier) offers the same
+create/restore capability with the same safeguards, plus a download link per
+backup and automatic deletion 7 days after creation — see
+[Web dashboard guide → Backups](webapp-guide.md#backups). The one thing it
+can't do that `/restore` can is restore an AES password-protected backup;
+use `/restore` for those.
+
 ## Why these two are Owner-only
 
 Both actions can change *who has access to the bot at all* — a bad restore

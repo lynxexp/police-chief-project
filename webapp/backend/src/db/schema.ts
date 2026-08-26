@@ -483,9 +483,16 @@ export interface CustomEventTable {
   /** JSON-encoded array of minutes-before, sorted descending, e.g.
    * "[10,5,0]" -- see cogs/notification_wizard.py's reminder_offsets. */
   reminder_offsets: string | null;
+  /** NULL when notifications_enabled is 0 -- a calendar-only event has no
+   * channel to post to. */
   channel_id: Snowflake | null;
   created_by: Snowflake | null;
   created_at: string | null;
+  /** DEFAULT 1. Off means this event is calendar-only: no channel/mention/
+   * reminders, nothing materialized into vault_notifications -- see
+   * cogs/notification_wizard.py's ALTER TABLE comment and
+   * notifications/customEventMaterialize.ts. */
+  notifications_enabled: Generated<SqliteBoolean>;
 }
 
 export interface VaultTrapSettingsTable {
@@ -516,27 +523,6 @@ export interface NotificationScheduleBoardTable {
   hide_daily_reset: Generated<SqliteBoolean>;
 }
 
-export interface NotificationTemplateTable {
-  template_id: Generated<number>;
-  template_name: string;
-  event_type: string | null;
-  description: string | null;
-  notification_type: number | null;
-  default_times: string | null;
-  embed_title: string | null;
-  embed_description: string | null;
-  embed_color: string | null;
-  embed_image_url: string | null;
-  embed_thumbnail_url: string | null;
-  repeat_config: string | null;
-  is_global: Generated<SqliteBoolean>;
-  created_by: Snowflake | null;
-  created_at: Generated<string | null>;
-  mention_message: string | null;
-  footer: string | null;
-  author: string | null;
-}
-
 export interface WizardNotificationTable {
   notification_id: number;
   guild_id: Snowflake;
@@ -554,7 +540,6 @@ export interface EventsDb {
   custom_events: CustomEventTable;
   vault_trap_settings: VaultTrapSettingsTable;
   notification_schedule_boards: NotificationScheduleBoardTable;
-  notification_templates: NotificationTemplateTable;
   wizard_notifications: WizardNotificationTable;
 }
 
@@ -583,7 +568,7 @@ export interface SessionsTable {
 }
 
 /** General-purpose activity log for this app's own mutating routes
- * (notifications, custom events, templates, theming, backups, gift
+ * (notifications, custom events, theming, backups, gift
  * codes) -- deliberately separate from the bot's own
  * `permission_audit_log` (settings.sqlite), which is a Python-owned
  * table with grant/revoke-shaped semantics (before/after permission
@@ -599,7 +584,20 @@ export interface AppAuditLogTable {
   created_at: string;
 }
 
+/** One subscribable-calendar token per Discord user (not per alliance --
+ * matches the interactive page's own model of "log in once, browse any
+ * alliance you have access to"). The token stands in for a session cookie
+ * on GET .../calendar.ics, since a calendar app (Google/Apple/Outlook)
+ * refetches that URL on its own schedule with no cookie support at all --
+ * see routes/calendarFeed.ts. */
+export interface CalendarFeedTokensTable {
+  discord_id: Snowflake;
+  token: string;
+  created_at: string;
+}
+
 export interface WebappDb {
   sessions: SessionsTable;
   app_audit_log: AppAuditLogTable;
+  calendar_feed_tokens: CalendarFeedTokensTable;
 }
