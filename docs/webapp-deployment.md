@@ -271,22 +271,45 @@ Same "never discards local changes" guarantee as the Windows/Linux
 ### Migrating an existing install's data to this VPS
 
 If you already have a running local or test deployment and want to move
-its data here rather than starting fresh, do steps 1–8 above first (VPS
-ready, repo cloned, images available, but not yet started), then:
+its data here rather than starting fresh, use the bot's own `/backup`
+and `/restore` — the [Migrating between installs](installation.md#migrating-between-installs)
+flow in the main installation guide, run once for this move too — rather
+than copying `db/` over by hand. It's strictly better than a raw file
+copy: it validates the backup on the way in, takes a fresh safety backup
+of whatever's already there before writing anything, and never risks
+grabbing a `.sqlite` file mid-write the way copying a live `db/` folder
+can. Concretely:
 
-1. Copy your existing `db/` and `webapp-db/` folders onto the VPS, into
-   `/opt/docker/police-chief-bot/db/` and `/opt/docker/police-chief-bot/webapp-db/`
-   respectively (`scp -r` or `rsync` both work fine for this).
-2. Continue from step 9 (`up -d`) above.
+1. Do steps 1–8 above first (VPS ready, repo cloned, images available,
+   but not yet started), then start the containers (step 9) with a
+   **fresh** `db/` — don't copy anything over yet.
+2. On the **old** install: `/settings` → **Backup** → **Create Backup
+   Now** → **Save Locally**. Copy the resulting zip to the VPS however's
+   convenient (`scp`, a Discord DM to yourself, whatever).
+3. On the **new** (VPS) install: run `/settings` once first if you
+   haven't (this makes whoever runs it the Bot Owner, so `/restore` has
+   someone authorized to run it), then `/restore file:<the backup zip>` —
+   Bot Owner only.
+4. Finish the rest of the [Migrating between installs](installation.md#migrating-between-installs)
+   checklist — **Change Server** for your alliance and reconfiguring
+   channels — since those don't travel with the backup either way.
+
+This covers all of the bot's own data (alliance records, Vault Trap/
+Capitol War history, members, permissions — everything under `db/`).
+It does **not** cover `webapp-db/` — the dashboard's session/OAuth
+database is a separate folder the bot's backup system never looks at.
+That's fine to just leave behind: existing dashboard users see a normal
+"sign in with Discord" screen once and nothing alliance-related is at
+risk. If you'd rather preserve existing web sessions anyway, copy
+`webapp-db/` over by hand the same way as before
+(`/opt/docker/police-chief-bot/webapp-db/` on the new host) — it's a much
+smaller, lower-stakes file than `db/`, so a raw copy there is fine even
+though it isn't for the bot's own data.
 
 The only value that actually has to change between hosts is
 `DISCORD_REDIRECT_URI` (and the matching redirect URI registered in the
 Discord Developer Portal) — everything else about the deployment is
-host-independent by design. If you're also moving the **bot** itself
-(not just the dashboard) to a different Discord server as part of this
-move, see [Migrating between installs](installation.md#migrating-between-installs)
-in the main installation guide first — that's a separate, bot-side
-process independent of anything here.
+host-independent by design.
 
 ## Going public: adding a reverse proxy
 
