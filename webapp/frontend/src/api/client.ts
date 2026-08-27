@@ -777,6 +777,25 @@ export function setUpdateCheckEnabled(enabled: boolean): Promise<{ ok: true; ena
   });
 }
 
+export type WatchtowerMode = "off" | "monitor" | "apply";
+
+export interface WatchtowerModeResponse {
+  configured: boolean;
+  mode?: WatchtowerMode;
+  running?: boolean;
+}
+
+export function getWatchtowerMode(): Promise<WatchtowerModeResponse> {
+  return request("/admin/system/watchtower-mode");
+}
+
+export function setWatchtowerMode(mode: WatchtowerMode): Promise<{ ok: true; mode: WatchtowerMode }> {
+  return request("/admin/system/watchtower-mode", {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+}
+
 export type BotCommand =
   | "run_cleanup"
   | "reload_cogs"

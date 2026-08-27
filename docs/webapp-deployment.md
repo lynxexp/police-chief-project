@@ -292,6 +292,38 @@ service from `docker-compose.yml` if you'd rather not accept that
 tradeoff; both other containers work the same either way, you'd just be
 back to the manual commands above.
 
+**Switching Watchtower between Off / check-only / auto-apply from the
+dashboard** needs one more piece: `watchtower-control`, a second,
+purpose-built service also defined in `docker-compose.yml`. Watchtower
+has no live way to change its own behavior — there's no "reload config"
+signal, and environment variables can only be changed by recreating a
+container — so making that a dashboard toggle instead of a
+docker-compose.yml hand-edit means something has to hold the Docker
+socket and do that recreate on request. `watchtower-control` is a small
+service built from `docker/watchtower-control/` (read `server.js` end to
+end before trusting it — it's short on purpose) that does exactly one
+thing: on an authenticated request, it stops Watchtower (Off), or
+recreates it with `WATCHTOWER_MONITOR_ONLY` added or removed (check-only
+vs. auto-apply). A `tecnativa/docker-socket-proxy`-style narrowing layer
+was considered and rejected here — checked its actual ACL rules directly,
+and it has no path for container create/remove at all, which is exactly
+what this needs, so it can't sit in front of this specific job. The real
+boundary is the service's own code: one hardcoded target container name
+it will ever touch, one capability, and a bearer token gating the only
+endpoint that acts.
+
+To enable it: generate one token (`openssl rand -base64 32`) and set it
+as both `police-chief-webapp`'s `WATCHTOWER_CONTROL_TOKEN` and
+`watchtower-control`'s `WATCHTOWER_CONTROL_TOKEN` in `docker-compose.yml`
+— same value in both places. Leave either blank (or delete the
+`watchtower-control` service entirely) to skip this; Watchtower itself
+keeps running exactly as configured either way, the dashboard just won't
+show the mode control. The chosen mode is persisted to a small file in
+`watchtower-control`'s own volume and re-applied on its own startup, so
+it survives a plain `docker compose up -d` — without that, a redeploy
+would silently reset Watchtower back to this file's own default
+(auto-apply) and undo whatever you'd picked.
+
 ### Migrating an existing install's data to this VPS
 
 If you already have a running local or test deployment and want to move

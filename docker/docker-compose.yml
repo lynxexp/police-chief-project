@@ -51,6 +51,12 @@ services:
       - DISCORD_REDIRECT_URI=http://localhost:3000/api/auth/callback
       - SESSION_SECRET=<generate once, keep stable -- e.g. `openssl rand -base64 32`>
       - TRUST_PROXY=false
+      # Same value as watchtower-control's WATCHTOWER_CONTROL_TOKEN below --
+      # lets the System Health page's watchtower mode control (Off / Check
+      # only / Auto-apply) reach that service. Omit both if you deleted
+      # watchtower-control; the web UI just won't show that control.
+      - WATCHTOWER_CONTROL_TOKEN=<generate once -- e.g. `openssl rand -base64 32`>
+      - WATCHTOWER_CONTROL_URL=http://watchtower-control:8090
     ports:
       # Loopback-only for now: host-reachable, not internet-reachable.
       # See webapp/backend/src/config.ts's trustProxy doc comment for the
@@ -77,22 +83,28 @@ services:
   # just be back to updating manually (git pull && docker compose pull
   # && docker compose up -d).
   watchtower:
-    image: containrrr/watchtower:latest
+    # containrrr/watchtower (the original project) was archived
+    # 2025-12-17 -- no further releases or security patches. This is
+    # nicholas-fedor/watchtower, the actively maintained continuation;
+    # same image behavior and env vars, verified against its own current
+    # docs before switching. If you're reading this well after the fact,
+    # it's worth checking whether that's still the healthiest fork.
+    image: ghcr.io/nicholas-fedor/watchtower:latest
     container_name: police-chief-watchtower
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # containrrr/watchtower's bundled Docker client defaults to a very
-      # old API version (seen negotiating as low as 1.25) that current
-      # Docker Engine releases refuse outright ("client version ... is
-      # too old, minimum supported API version is 1.40"). Pinning this
-      # forces it to speak a version modern daemons actually accept;
+      # This fork's bundled Docker client has the same old-API-version
+      # default the original project did (seen negotiating as low as
+      # 1.25, which current Docker Engine releases refuse outright:
+      # "client version ... is too old, minimum supported API version is
+      # 1.40"). Pinning this forces a version modern daemons accept;
       # check `docker version --format '{{.Server.APIVersion}}'` on the
       # host if this ever needs bumping again.
       - DOCKER_API_VERSION=1.44
-      # Only touches containers carrying the label above -- caddy and
-      # watchtower itself are never in scope.
+      # Only touches containers carrying the label above -- caddy,
+      # watchtower itself, and watchtower-control are never in scope.
       - WATCHTOWER_LABEL_ENABLE=true
       # Matches the bot's own GitHub release-check cadence (6h) so both
       # "is there an update" signals move in step.
@@ -100,3 +112,36 @@ services:
       # Remove the old image after a successful update instead of letting
       # every past version pile up on disk indefinitely.
       - WATCHTOWER_CLEANUP=true
+      # WATCHTOWER_MONITOR_ONLY is added/removed here by watchtower-control
+      # below, not by hand -- it rewrites this file's running container
+      # (not this file itself) when the mode changes. Editing this section
+      # directly still works for a one-time manual change, but won't
+      # survive the next mode change made through the dashboard.
+
+  # The only thing besides Watchtower itself with Docker socket access.
+  # Exists for exactly one reason: env vars can't be changed on a running
+  # container, and there's no live "reload config" for Watchtower, so
+  # switching it to monitor-only (checks for updates, never applies them)
+  # or off genuinely requires recreating it -- something has to hold the
+  # socket to do that. See watchtower-control/server.js's own header
+  # comment for why there's no docker-socket-proxy narrowing this further
+  # (checked: it has no path for container create/remove at all, which is
+  # exactly what this needs) and what the real boundary is instead.
+  #
+  # Delete this service (and WATCHTOWER_CONTROL_TOKEN/_URL above) if you'd
+  # rather not accept a second thing holding the socket -- watchtower
+  # keeps running exactly as configured above either way, you'll just be
+  # back to editing this file by hand to change its mode.
+  watchtower-control:
+    build:
+      context: ./watchtower-control
+    container_name: police-chief-watchtower-control
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - watchtower_control_data:/data
+    environment:
+      # Same value as police-chief-webapp's WATCHTOWER_CONTROL_TOKEN above.
+      - WATCHTOWER_CONTROL_TOKEN=<generate once -- e.g. `openssl rand -base64 32`>
+volumes:
+  watchtower_control_data:

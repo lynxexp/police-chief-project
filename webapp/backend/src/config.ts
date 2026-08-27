@@ -84,6 +84,16 @@ export const config = {
 
   sessionSecret: required("SESSION_SECRET"),
 
+  // Both optional together -- the watchtower-control sidecar (see
+  // docker/docker-compose.yml) is itself an optional service. Empty
+  // string on either means "not configured"; routes/systemHealth.ts
+  // checks for that and tells the dashboard to hide the control rather
+  // than fail confusingly against an empty URL.
+  watchtowerControl: {
+    url: optional("WATCHTOWER_CONTROL_URL", ""),
+    token: optional("WATCHTOWER_CONTROL_TOKEN", ""),
+  },
+
   // Gates whether X-Forwarded-Proto is trusted to decide the session
   // cookie's Secure flag and the scheme used when constructing URLs.
   // Stays false until a reverse proxy (Caddy) is actually in front of this

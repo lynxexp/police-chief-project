@@ -29,6 +29,7 @@ import { sql } from "kysely";
 import { settingsDb } from "../db/connections.js";
 import { resolveAuthContext } from "../auth/context.js";
 import { logAppAction } from "../audit.js";
+import { config } from "../config.js";
 
 const ALLOWED_COMMANDS = [
   "run_cleanup",
@@ -197,6 +198,87 @@ export default async function systemHealthRoutes(fastify: FastifyInstance): Prom
       // not a failure, just slower than usual; the dashboard's next status
       // poll will reflect it once done.
       return reply.code(202).send({ status: "pending" });
+    },
+  );
+
+  // Proxies to the watchtower-control sidecar (docker/docker-compose.yml)
+  // -- this process never touches the Docker socket itself, same "one
+  // narrow, auditable thing holds that access" boundary described in
+  // docker/watchtower-control/server.js's own header comment. Not part
+  // of the bot_commands queue above: this doesn't go through the bot at
+  // all, since Watchtower is a third container the bot has no more
+  // access to than this webapp does.
+  const WATCHTOWER_MODES = ["off", "monitor", "apply"] as const;
+  type WatchtowerMode = (typeof WATCHTOWER_MODES)[number];
+
+  function watchtowerConfigured(): boolean {
+    return Boolean(config.watchtowerControl.url && config.watchtowerControl.token);
+  }
+
+  fastify.get("/admin/system/watchtower-mode", async (request, reply) => {
+    const ctx = await resolveAuthContext(request.session!);
+    if (!ctx.isOwner) {
+      return reply.code(403).send({ error: "owner_required" });
+    }
+    if (!watchtowerConfigured()) {
+      return { configured: false };
+    }
+    try {
+      const res = await fetch(`${config.watchtowerControl.url}/mode`, {
+        headers: { Authorization: `Bearer ${config.watchtowerControl.token}` },
+      });
+      const body = (await res.json()) as { mode?: WatchtowerMode; running?: boolean; error?: string };
+      if (!res.ok) {
+        return reply.code(502).send({ configured: true, error: body.error ?? "watchtower_control_error" });
+      }
+      return { configured: true, mode: body.mode, running: body.running };
+    } catch (e) {
+      return reply.code(502).send({
+        configured: true,
+        error: e instanceof Error ? e.message : "watchtower_control_unreachable",
+      });
+    }
+  });
+
+  fastify.post<{ Body: { mode: WatchtowerMode } }>(
+    "/admin/system/watchtower-mode",
+    {
+      schema: { body: { type: "object", required: ["mode"], properties: { mode: { type: "string", enum: [...WATCHTOWER_MODES] } } } },
+      preHandler: fastify.csrfProtection,
+    },
+    async (request, reply) => {
+      const ctx = await resolveAuthContext(request.session!);
+      if (!ctx.isOwner) {
+        return reply.code(403).send({ error: "owner_required" });
+      }
+      if (!watchtowerConfigured()) {
+        return reply.code(503).send({ error: "not_configured" });
+      }
+      try {
+        const res = await fetch(`${config.watchtowerControl.url}/mode`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${config.watchtowerControl.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ mode: request.body.mode }),
+        });
+        const body = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok) {
+          return reply.code(502).send({ error: body.error ?? "watchtower_control_error" });
+        }
+        await logAppAction({
+          actorId: ctx.discordId,
+          action: "watchtower_mode_changed",
+          resourceType: "system_settings",
+          detail: request.body.mode,
+        });
+        return { ok: true, mode: request.body.mode };
+      } catch (e) {
+        return reply.code(502).send({
+          error: e instanceof Error ? e.message : "watchtower_control_unreachable",
+        });
+      }
     },
   );
 }

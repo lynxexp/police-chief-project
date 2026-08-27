@@ -5,9 +5,12 @@ import {
   getSystemStatus,
   setUpdateCheckEnabled,
   runBotCommand,
+  getWatchtowerMode,
+  setWatchtowerMode,
   type BotCommand,
   type StatusCheck,
   type SystemStatusResponse,
+  type WatchtowerMode,
 } from "../api/client";
 import { Badge, Card, ErrorState, LoadingState, SectionHeading, buttonDanger, buttonPrimary, buttonSecondary } from "../components/ui";
 
@@ -64,6 +67,17 @@ export default function AdminSystemHealth() {
   const [confirmingRestart, setConfirmingRestart] = useState(false);
   const [confirmingUpdate, setConfirmingUpdate] = useState(false);
   const [lastResult, setLastResult] = useState<{ command: BotCommand; message: string; isError: boolean } | null>(null);
+
+  const watchtowerQuery = useQuery({
+    queryKey: ["watchtower-mode"],
+    queryFn: getWatchtowerMode,
+    refetchInterval: 15_000,
+  });
+
+  const watchtowerModeMutation = useMutation({
+    mutationFn: setWatchtowerMode,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["watchtower-mode"] }),
+  });
 
   const toggleMutation = useMutation({
     mutationFn: setUpdateCheckEnabled,
@@ -233,6 +247,42 @@ export default function AdminSystemHealth() {
                   : "Not checking -- update on your own schedule instead."}
               </span>
             </div>
+
+            {snapshot.isContainer && watchtowerQuery.data?.configured && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-800 pt-3">
+                <span className="text-sm text-slate-400">Docker auto-update (watchtower)</span>
+                <select
+                  value={watchtowerQuery.data.mode ?? "apply"}
+                  onChange={(e) => watchtowerModeMutation.mutate(e.target.value as WatchtowerMode)}
+                  disabled={watchtowerModeMutation.isPending}
+                  className="rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
+                >
+                  <option value="off">Off</option>
+                  <option value="monitor">Check only, don't apply</option>
+                  <option value="apply">Check and auto-apply</option>
+                </select>
+                <span className="text-xs text-slate-500">
+                  {watchtowerQuery.data.mode === "off" &&
+                    "Watchtower is stopped -- no checking, no updating."}
+                  {watchtowerQuery.data.mode === "monitor" &&
+                    "Polls every 6h and logs what's available, but never recreates a container."}
+                  {(watchtowerQuery.data.mode === "apply" || !watchtowerQuery.data.mode) &&
+                    "Polls every 6h and recreates a container automatically when a newer image is published."}
+                </span>
+              </div>
+            )}
+            {snapshot.isContainer && watchtowerQuery.data && !watchtowerQuery.data.configured && (
+              <p className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-500">
+                Docker auto-update: the optional watchtower-control service isn't configured
+                (WATCHTOWER_CONTROL_URL/_TOKEN unset) -- see
+                docker/docker-compose.yml if you want this control.
+              </p>
+            )}
+            {snapshot.isContainer && watchtowerQuery.isError && (
+              <p className="mt-3 border-t border-slate-800 pt-3 text-xs text-red-400">
+                Couldn't reach watchtower-control to read its current mode.
+              </p>
+            )}
           </Card>
 
           <div className="mb-6 grid gap-4 md:grid-cols-3">
