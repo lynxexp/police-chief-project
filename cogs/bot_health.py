@@ -35,8 +35,14 @@ GITHUB_REPO = "lynxexp/police-chief-project"
 # Thresholds
 DB_SIZE_WARNING_MB = 100
 DB_SIZE_ERROR_MB = 500
-WAL_SIZE_WARNING_MB = 1
-WAL_SIZE_ERROR_MB = 10
+# SQLite's own default auto-checkpoint threshold is 1000 pages (~4MB at the
+# default 4KB page size) -- a WAL file sitting anywhere under that is
+# completely normal for a database with any regular write traffic, not a
+# sign of anything wrong. 1MB (the old value here) is smaller than SQLite's
+# own default auto-checkpoint point, which meant this fired on ordinary,
+# healthy activity rather than an actual stuck-checkpoint problem.
+WAL_SIZE_WARNING_MB = 20
+WAL_SIZE_ERROR_MB = 100
 LOG_SIZE_WARNING_MB = 50
 LOG_SIZE_ERROR_MB = 100
 ORPHANED_LOGS_WARNING = 1
@@ -353,12 +359,19 @@ class BotHealth(commands.Cog):
         else:
             status = STATUS_HEALTHY
 
+        # Say which number actually drove a non-healthy status -- "2.1 MB"
+        # on its own gives no hint that it was the WAL, not the total, that
+        # crossed a threshold (that confusion is what prompted this fix).
+        message = f'{total_mb:.1f} MB'
+        if status != STATUS_HEALTHY and wal_mb > WAL_SIZE_WARNING_MB:
+            message += f' (WAL {wal_mb:.1f} MB -- run Cleanup to checkpoint it)'
+
         return {
             'status': status,
             'total_mb': total_mb,
             'wal_mb': wal_mb,
             'last_cleanup': last_cleanup,
-            'message': f'{total_mb:.1f} MB'
+            'message': message
         }
 
     @staticmethod
