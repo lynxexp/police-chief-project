@@ -44,7 +44,11 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64,linux/arm
+          # No linux/arm (32-bit/armv7) -- onnxruntime has never published
+          # a wheel for it, on any version, so that platform can never
+          # succeed here (confirmed against PyPI's actual file listing).
+          # linux/arm64 does have real onnxruntime wheels and builds fine.
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ github.repository_owner }}/bot:latest
             ghcr.io/${{ github.repository_owner }}/bot:${{ github.event.inputs.tag || github.event.release.tag_name }}
