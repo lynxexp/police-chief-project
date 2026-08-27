@@ -1,8 +1,14 @@
 services:
   police-chief-bot:
-    # Placeholder image ref - this fork has no published registry image yet.
-    # Build locally instead: docker build -t police-chief-bot:latest -f docker/Dockerfile .
-    image: police-chief-bot:latest
+    # Published by .github/workflows/docker.yml on every release -- `docker
+    # compose pull` grabs this instead of building. Requires the ghcr.io/
+    # lynxexp/bot package to be set to Public (Package settings -> Danger
+    # Zone -> Change visibility); it's private by default until someone
+    # flips that, and `pull` will fail with "unauthorized" until then.
+    # Prefer building locally instead: docker build -t police-chief-bot:latest
+    # -f docker/Dockerfile . -- then change image: above to
+    # police-chief-bot:latest.
+    image: ghcr.io/lynxexp/bot:latest
     container_name: police-chief-bot
     volumes:
       - /opt/docker/police-chief-bot/db/:/app/db
