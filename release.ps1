@@ -119,9 +119,15 @@ if ($Notes) {
     # $ErrorActionPreference = "Stop", redirecting a native command's
     # stderr turns that into a terminating error even though "no tags
     # yet" is an expected, handled case here, not a real failure.
-    $allTags = git tag -l "v*" | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
-        Sort-Object { [version]($_ -replace '^v', '') }
-    $lastTag = if ($allTags) { $allTags[-1] } else { $null }
+    # @(...) forces array context -- without it, a pipeline that happens to
+    # return exactly one tag collapses to a plain string, and $allTags[-1]
+    # then indexes the STRING'S LAST CHARACTER ("v0.1.0"[-1] -> "0") instead
+    # of the last array element. Bit us for real: with only v0.1.0 existing,
+    # $lastTag became the literal string "0", and `git log --oneline
+    # "0..HEAD"` failed outright, silently producing "No notable changes."
+    $allTags = @(git tag -l "v*" | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
+        Sort-Object { [version]($_ -replace '^v', '') })
+    $lastTag = if ($allTags.Count -gt 0) { $allTags[-1] } else { $null }
     if ($lastTag) {
         $commits = git log --oneline "$lastTag..HEAD"
     } else {
