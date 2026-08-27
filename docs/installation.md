@@ -149,17 +149,35 @@ Better suited to a VPS or home server you want running unattended. A
 `docker/` folder is included with a `Dockerfile`, `docker-compose.yml`, and
 `bootstrap.sh`.
 
+**Want the web dashboard too, not just the bot?** `docker-compose.yml`
+already defines both as one stack (`police-chief-bot` and
+`police-chief-webapp` services in the same file) — skip this section
+entirely and follow [webapp-deployment.md's "Deploying to a
+VPS"](webapp-deployment.md#deploying-to-a-vps) instead, which covers
+both together from a single `docker compose up -d`.
+
 1. Clone the repository (same as above).
 2. Build the image from the repo root:
    ```bash
    docker build -t police-chief-bot:latest -f docker/Dockerfile .
    ```
-3. Set your bot token (the one from **Before you start**, step 4) as an
-   environment variable and start it:
+3. Open `docker/docker-compose.yml` and replace
+   `DISCORD_BOT_TOKEN=<your bot token here>` under `police-chief-bot`
+   with your actual token (the one from **Before you start**, step 4),
+   then start **just that service**:
    ```bash
-   export DISCORD_BOT_TOKEN=your_token_here
-   docker compose -f docker/docker-compose.yml up -d
+   docker compose -f docker/docker-compose.yml up -d police-chief-bot
    ```
+   Naming the service, rather than a bare `up -d`, matters here — the
+   same file also defines `police-chief-webapp`, and a bare `up -d`
+   would try to start it too, unconfigured, which exits immediately on
+   a missing `DISCORD_CLIENT_ID`/`SESSION_SECRET`/etc. and then
+   crash-loops forever under `restart: unless-stopped`.
+
+   Also note the token has to be edited into the file itself — it's a
+   literal placeholder there, not a `${DISCORD_BOT_TOKEN}` substitution,
+   so setting an environment variable of that name first has no effect.
+
    `docker-compose.yml` mounts a local `db/` folder into the container so
    your data survives container restarts/rebuilds — check the compose file
    before your first run if you want to change where that lives on the host.
