@@ -144,7 +144,13 @@ if ($DryRun) {
 
 # --- Bump, commit, tag, push ----------------------------------------------
 
-Set-Content -Path "version" -Value $newVersion -Encoding utf8
+
+# -Encoding ascii (not utf8 -- Windows PowerShell 5.1's utf8 always
+# writes a BOM, which both main.py and bot_health.py would otherwise read
+# as three garbage characters glued onto the front of the version
+# string). Plain ASCII digits and dots need nothing fancier and can never
+# carry a BOM.
+Set-Content -Path "version" -Value $newVersion -Encoding ascii
 git add version
 git commit -m "Release $tag" | Out-Null
 git tag -a $tag -m "Release $tag"

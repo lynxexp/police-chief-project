@@ -1235,9 +1235,12 @@ class BotHealth(commands.Cog):
 
     def _read_local_version(self) -> str:
         """Same read main.py's startup banner does -- 'unknown' if the file
-        is missing (e.g. a source checkout with no version file at all)."""
+        is missing (e.g. a source checkout with no version file at all).
+        utf-8-sig strips a leading UTF-8 BOM if present (PowerShell's
+        -Encoding utf8 always writes one) -- reads identically to plain
+        utf-8 when there isn't one, so this is safe either way."""
         if os.path.exists(self.version_path):
-            with open(self.version_path, "r") as f:
+            with open(self.version_path, "r", encoding="utf-8-sig") as f:
                 v = f.read().strip()
                 if v:
                     return v

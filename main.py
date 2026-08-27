@@ -538,7 +538,11 @@ if __name__ == "__main__":
     # Display startup header
     _version = "unknown"
     if os.path.exists("version"):
-        with open("version", "r") as f:
+        # utf-8-sig strips a leading UTF-8 BOM if present (e.g. from a
+        # Windows editor or PowerShell's -Encoding utf8, which always
+        # writes one) -- reads identically to plain utf-8 when there
+        # isn't one, so this is safe either way.
+        with open("version", "r", encoding="utf-8-sig") as f:
             _version = f.read().strip()
     _flags = []
     if '--no-venv' in sys.argv: _flags.append('--no-venv')
