@@ -4,6 +4,7 @@ Bot health dashboard. Shows API status, database health, system info, and cleanu
 import discord
 from discord.ext import commands, tasks
 import sqlite3
+import json
 import os
 import sys
 import platform
@@ -155,6 +156,8 @@ class BotHealth(commands.Cog):
         self.api_status_loop.start()
         self.heartbeat_loop.start()
         self.update_check_loop.start()
+        self.command_poll_loop.start()
+        self.status_snapshot_loop.start()
         self.logger.info("[HEALTH] Bot Health cog initialized")
 
     def _db(self, path: str, timeout: float = 30.0) -> sqlite3.Connection:
@@ -195,6 +198,38 @@ class BotHealth(commands.Cog):
                 channel_id INTEGER NOT NULL,
                 message_id INTEGER NOT NULL,
                 initiated_at REAL NOT NULL
+            )
+        """)
+
+        # Cross-process bridge for the web dashboard -- same "SQLite is the
+        # only channel" architecture as everything else shared with the web
+        # backend (see docker-compose.yml's own comment on this). The web
+        # backend INSERTs a pending row and polls it; command_poll_loop
+        # picks it up, runs the same method the Discord button calls, and
+        # writes the result back. No direct network/IPC between the two
+        # processes at all.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                command TEXT NOT NULL,
+                requested_by TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                result TEXT,
+                completed_at TEXT
+            )
+        """)
+
+        # Single-row cache of the same status the Discord /health dashboard
+        # computes, refreshed by status_snapshot_loop -- the web dashboard
+        # reads this instead of reimplementing every health check in
+        # TypeScript, so there's exactly one place that decides what
+        # "healthy" means.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS health_snapshot (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                snapshot_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
         """)
 
@@ -1422,6 +1457,138 @@ class BotHealth(commands.Cog):
         except Exception as e:
             self.logger.error(f"Update-available DM failed: {e}")
 
+    def _restart_note(self) -> str:
+        """Same platform check perform_restart() uses for its Discord embed --
+        shared so the web dashboard tells the truth about Windows too."""
+        if sys.platform == 'win32' and not is_container():
+            return ("On Windows the bot does not auto-restart. Start it again on the "
+                    "host (`python main.py`), or set up watchdog.ps1 to do it "
+                    "automatically -- see docs/installation.md.")
+        return "The bot is restarting now and will reconnect automatically."
+
+    @tasks.loop(seconds=2)
+    async def command_poll_loop(self):
+        """Executes commands the web dashboard queued in bot_commands -- the
+        only channel between the two processes (see bot_commands' doc
+        comment in _setup_database). Runs every 2s rather than the
+        notification loop's 0.1s: these are deliberate, infrequent admin
+        actions, not time-sensitive sends."""
+        try:
+            with self._db(self.settings_db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id, command FROM bot_commands WHERE status = 'pending' ORDER BY id LIMIT 1"
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return
+                cmd_id, command = row
+                # Mark running immediately -- a slow action must not be picked up twice.
+                cursor.execute("UPDATE bot_commands SET status = 'running' WHERE id = ?", (cmd_id,))
+                conn.commit()
+        except Exception as e:
+            self.logger.error(f"Command poll failed: {e}")
+            return
+
+        result = None
+        error = None
+        try:
+            if command == 'run_cleanup':
+                result = await self.run_cleanup()
+            elif command == 'reload_cogs':
+                result = await self.reload_cogs(self.get_loaded_cogs())
+            elif command == 'clear_queue':
+                pq = self.bot.get_cog("ProcessQueue")
+                removed = pq.clear_processes(("queued", "failed")) if pq else 0
+                result = {'removed': removed}
+            elif command == 'restart':
+                result = {'note': self._restart_note()}
+            else:
+                error = f"Unknown command: {command}"
+        except Exception as e:
+            error = str(e)[:500]
+            self.logger.error(f"Command '{command}' (id={cmd_id}) failed: {e}")
+
+        try:
+            with self._db(self.settings_db_path) as conn:
+                conn.execute(
+                    "UPDATE bot_commands SET status = ?, result = ?, completed_at = ? WHERE id = ?",
+                    (
+                        'error' if error else 'done',
+                        json.dumps({'error': error} if error else result),
+                        datetime.now(timezone.utc).isoformat(),
+                        cmd_id,
+                    ),
+                )
+                conn.commit()
+        except Exception as e:
+            self.logger.error(f"Could not write result for command {cmd_id}: {e}")
+
+        if command == 'restart' and not error:
+            # Give the UPDATE above (and the web backend's poll) a moment to
+            # land before this process actually goes away.
+            await asyncio.sleep(1)
+            self.logger.info("Web-triggered restart...")
+            restart_process()
+
+    @command_poll_loop.before_loop
+    async def before_command_poll_loop(self):
+        await self.bot.wait_until_ready()
+
+    async def _build_status_snapshot(self) -> dict:
+        """Same data _build_health_embed() renders for Discord, as a plain
+        dict -- the single source of truth both surfaces read from."""
+        from . import onnx_lifecycle
+        wos_api = await self.check_wos_api_status()
+        gift_api = await self.check_gift_distribution_api()
+        db_health = self.get_database_health()
+        log_health = self.get_log_health()
+        system_health = self.get_system_health()
+        requirements = self.get_requirements_health()
+        disk_health = self.get_disk_health()
+        overall = self.get_overall_status(db_health, log_health, system_health, wos_api, gift_api, requirements)
+        ocr_status, ocr_summary = self._build_ocr_summary(onnx_lifecycle.get_status_lines())
+        pq = self.bot.get_cog("ProcessQueue")
+        queue = pq.queue_counts() if pq else None
+        config = self.get_config()
+
+        return {
+            'overall': overall,
+            'wosApi': wos_api,
+            'giftApi': gift_api,
+            'ocr': {'status': ocr_status, 'summary': ocr_summary},
+            'system': system_health,
+            'disk': disk_health,
+            'database': db_health,
+            'logs': log_health,
+            'requirements': requirements,
+            'queue': queue,
+            'loadedCogs': self.get_loaded_cogs(),
+            'version': self._read_local_version(),
+            'latestRelease': self._cached_latest_release,
+            'updateCheckEnabled': bool(config.get('update_check_enabled', 1)),
+            'isWindowsHost': sys.platform == 'win32' and not is_container(),
+            'generatedAt': datetime.now(timezone.utc).isoformat(),
+        }
+
+    @tasks.loop(seconds=30)
+    async def status_snapshot_loop(self):
+        try:
+            snapshot = await self._build_status_snapshot()
+            with self._db(self.settings_db_path) as conn:
+                conn.execute(
+                    "INSERT INTO health_snapshot (id, snapshot_json, updated_at) VALUES (1, ?, ?) "
+                    "ON CONFLICT(id) DO UPDATE SET snapshot_json = excluded.snapshot_json, updated_at = excluded.updated_at",
+                    (json.dumps(snapshot, default=str), datetime.now(timezone.utc).isoformat()),
+                )
+                conn.commit()
+        except Exception as e:
+            self.logger.warning(f"Status snapshot failed: {e}")
+
+    @status_snapshot_loop.before_loop
+    async def before_status_snapshot_loop(self):
+        await self.bot.wait_until_ready()
+
     @staticmethod
     def _compute_bot_footprint_mb() -> float:
         """Total on-disk size of the bot dir (in a thread). Includes the venv and
@@ -1456,6 +1623,10 @@ class BotHealth(commands.Cog):
             self.heartbeat_loop.cancel()
         if self.update_check_loop.is_running():
             self.update_check_loop.cancel()
+        if self.command_poll_loop.is_running():
+            self.command_poll_loop.cancel()
+        if self.status_snapshot_loop.is_running():
+            self.status_snapshot_loop.cancel()
         if self._api_refresh_task and not self._api_refresh_task.done():
             self._api_refresh_task.cancel()
         self.logger.info("[HEALTH] Bot Health cog unloaded")

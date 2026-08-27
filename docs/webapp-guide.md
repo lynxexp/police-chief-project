@@ -231,6 +231,46 @@ so it's built with several layers of safety:
   neither happens automatically. The page tells you this plainly when a
   restore completes.
 
+### System Health
+
+`Admin → System Health` (**Owner tier only**). The web equivalent of the
+Discord bot's `/health` dashboard — the bot itself computes every check
+(API status, database/log/disk health, dependency versions) and this page
+just displays it, refreshing automatically every 15 seconds. If it ever
+says "the Discord bot needs to have started at least once," that's literal
+— this page has nothing to show until the bot has run and computed a status
+at least one time.
+
+**Version** shows what you're running and, if a newer release exists,
+a link to its release notes plus the exact command to update (`update.ps1`
+on Windows, `./update.sh` on Linux/Mac, or the `docker compose` command for
+a Docker install). The **Automatic update checks** toggle here is the same
+setting as the Bot Health menu's toggle in Discord — flip it in either
+place and it applies everywhere; when on, the bot checks GitHub every 6
+hours and DMs the Global Admin about new releases.
+
+**Actions** run the same operations as their Discord counterparts, from the
+web instead:
+
+- **Run Cleanup** — WAL checkpoints, log archival, and stale-file cleanup.
+- **Reload All Cogs** — hot-reloads the bot's code modules without a full
+  restart (the Bot Health module itself can't reload itself while in use,
+  so it's always skipped — this is normal, not a failure).
+- **Clear Queue** — drops queued and failed background jobs; never touches
+  one that's actively running.
+- **Restart Bot** — asks for confirmation first. On Linux/Mac/Docker it
+  restarts automatically; **on Windows it does not** unless `watchdog.ps1`
+  is set up (see the [Installation guide](installation.md#restarting)) —
+  the page tells you this before you confirm.
+
+There's no direct connection between this web server and the Discord bot's
+process — clicking an action here writes a request the bot picks up within
+a couple of seconds and executes itself, the same "the database is the only
+channel" design the rest of this app uses. A slow action (Run Cleanup can
+take longer than others) may come back as "still running" rather than a
+final result — that's not a failure, just check the dashboard again in a
+moment.
+
 ### Theming
 
 `Admin → Themes` (Global tier and up). Create a new theme (clones the
@@ -353,7 +393,7 @@ coordinate. What this page *does* give you:
 | Admin home, alliance members, channel setup | Alliance tier and up (for their assigned alliance(s)) |
 | Notifications, custom events, schedule boards | Server tier and up (guild-wide settings) |
 | Permissions, audit log, gift codes (manage), themes | Global tier and up |
-| Backups | Owner only |
+| Backups, System Health | Owner only |
 
 ## Troubleshooting
 

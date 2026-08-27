@@ -94,7 +94,10 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext; onNaviga
       );
     }
     if (ctx.isOwner) {
-      adminItems.push({ to: "/admin/backups", label: "Backups", icon: "💾" });
+      adminItems.push(
+        { to: "/admin/backups", label: "Backups", icon: "💾" },
+        { to: "/admin/system", label: "System Health", icon: "🖥️" },
+      );
     }
     sections.push({ heading: "Admin", items: adminItems });
   }

@@ -714,6 +714,89 @@ export function cancelRestore(token: string): Promise<{ ok: true }> {
 }
 
 // ---------------------------------------------------------------------------
+// System health (see routes/systemHealth.ts) -- web mirror of the Discord
+// bot's /health dashboard. Owner-only. The snapshot shape is whatever
+// cogs/bot_health.py's _build_status_snapshot() writes; typed loosely
+// (StatusCheck) rather than mirrored field-for-field, since this app never
+// interprets the values itself, only displays them.
+// ---------------------------------------------------------------------------
+
+export interface StatusCheck {
+  status: "healthy" | "warning" | "error";
+  message?: string;
+  [key: string]: unknown;
+}
+
+export interface SystemSnapshot {
+  overall: "healthy" | "warning" | "error";
+  wosApi: StatusCheck;
+  giftApi: StatusCheck;
+  ocr: { status: string; summary: string };
+  system: {
+    uptime: string;
+    latency_ms: number;
+    latency_status: string;
+    loaded_cogs: number;
+    python_version: string;
+    platform: string;
+    memory_msg: string | null;
+    memory_status: string;
+  };
+  disk: StatusCheck;
+  database: StatusCheck;
+  logs: StatusCheck;
+  requirements: {
+    status: string;
+    missing: string[];
+    outdated: { package: string; required: string; installed: string }[];
+    ok_count: number;
+    total: number;
+    error: string | null;
+  };
+  queue: { queued: number; active: number; completed: number; failed: number } | null;
+  loadedCogs: string[];
+  version: string;
+  latestRelease: { tag_name: string; name: string; html_url: string } | null;
+  updateCheckEnabled: boolean;
+  isWindowsHost: boolean;
+  generatedAt: string;
+}
+
+export interface SystemStatusResponse {
+  snapshot: SystemSnapshot;
+  updatedAt: string;
+}
+
+export function getSystemStatus(): Promise<SystemStatusResponse> {
+  return request("/admin/system/status");
+}
+
+export function setUpdateCheckEnabled(enabled: boolean): Promise<{ ok: true; enabled: boolean }> {
+  return request("/admin/system/update-check", {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export type BotCommand = "run_cleanup" | "reload_cogs" | "clear_queue" | "restart";
+
+export interface BotCommandResponse {
+  status: "done" | "error" | "pending";
+  result?: unknown;
+}
+
+/** Waits (server-side, up to ~25s) for the bot to pick up and finish the
+ * command before resolving -- see routes/systemHealth.ts's poll loop. A
+ * "pending" status back means it's just slower than usual, not failed;
+ * the next status refresh will reflect it once done. */
+export function runBotCommand(command: BotCommand): Promise<BotCommandResponse> {
+  return request("/admin/system/commands", {
+    method: "POST",
+    body: JSON.stringify({ command }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Theming (see routes/theming.ts). Theme CRUD is Owner/Global-only; which
 // theme a guild uses (server_themes) is canManageGuild (Server tier+).
 // ---------------------------------------------------------------------------

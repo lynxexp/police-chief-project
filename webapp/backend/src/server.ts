@@ -24,6 +24,7 @@ import themingRoutes from "./routes/theming.js";
 import notificationRoutes from "./routes/notifications.js";
 import customEventRoutes from "./routes/customEvents.js";
 import scheduleBoardRoutes from "./routes/scheduleBoards.js";
+import systemHealthRoutes from "./routes/systemHealth.js";
 
 async function main(): Promise<void> {
   // Refuse to start against a bot database version this app doesn't
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
   await fastify.register(notificationRoutes, { prefix: "/api" });
   await fastify.register(customEventRoutes, { prefix: "/api" });
   await fastify.register(scheduleBoardRoutes, { prefix: "/api" });
+  await fastify.register(systemHealthRoutes, { prefix: "/api" });
   // Registered last: its SPA-fallback 404 handler must not shadow any
   // /api/* route registered above it.
   await fastify.register(staticPlugin);

@@ -190,11 +190,47 @@ export interface RegisterSettingsTable {
   enabled: SqliteBoolean | null;
 }
 
+/** cogs/bot_health.py's config row -- id is always 1 (single global row).
+ * Only the columns this app touches are modeled; the bot owns several more
+ * (cleanup_hour, custom_helper_files, etc.) that this app never reads. */
+export interface HealthConfigTable {
+  id: Generated<number>;
+  update_check_enabled: SqliteBoolean;
+  last_notified_version: string | null;
+}
+
+/** Cross-process command queue -- see bot_health.py's _setup_database()
+ * doc comment. This app INSERTs a pending row and polls it; the bot's
+ * command_poll_loop picks it up, runs the action, and writes the result
+ * back. Never written by anything other than this table's two consumers. */
+export interface BotCommandsTable {
+  id: Generated<number>;
+  command: string;
+  requested_by: Snowflake;
+  requested_at: string;
+  status: string;
+  result: string | null;
+  completed_at: string | null;
+}
+
+/** Single-row cache of the bot's own /health status computation, refreshed
+ * every 30s by bot_health.py's status_snapshot_loop. snapshot_json is an
+ * opaque JSON blob (see routes/systemHealth.ts for the shape) -- this app
+ * only ever reads and re-serves it, never recomputes any of it itself. */
+export interface HealthSnapshotTable {
+  id: Generated<number>;
+  snapshot_json: string;
+  updated_at: string;
+}
+
 export interface SettingsDb {
   admin: AdminTable;
   adminserver: AdminServerTable;
   permission_audit_log: PermissionAuditLogTable;
   register_settings: RegisterSettingsTable;
+  health_config: HealthConfigTable;
+  bot_commands: BotCommandsTable;
+  health_snapshot: HealthSnapshotTable;
 }
 
 // ---------------------------------------------------------------------------

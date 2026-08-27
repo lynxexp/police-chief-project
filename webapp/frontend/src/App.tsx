@@ -16,6 +16,7 @@ import AdminAuditLog from "./pages/AdminAuditLog";
 import GiftCodes from "./pages/GiftCodes";
 import AdminGiftCodes from "./pages/AdminGiftCodes";
 import AdminBackups from "./pages/AdminBackups";
+import AdminSystemHealth from "./pages/AdminSystemHealth";
 import AdminThemes from "./pages/AdminThemes";
 import AdminThemeEditor from "./pages/AdminThemeEditor";
 import AdminNotifications from "./pages/AdminNotifications";
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/gift-codes" element={<GiftCodes />} />
             <Route path="/admin/gift-codes" element={<AdminGiftCodes />} />
             <Route path="/admin/backups" element={<AdminBackups />} />
+            <Route path="/admin/system" element={<AdminSystemHealth />} />
             <Route path="/admin/themes" element={<AdminThemes />} />
             <Route path="/admin/themes/:themeName" element={<AdminThemeEditor />} />
             <Route path="/admin/alliances/:allianceId/notifications" element={<AdminNotifications />} />
