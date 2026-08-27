@@ -76,19 +76,44 @@ it's gone stale — dead process or a hung one — kills anything still running
 and starts a fresh `python main.py`, logging what it did to `watchdog.log`.
 It's a check-once-and-exit script, meant to run on a repeating schedule
 rather than as its own long-lived process (a watchdog that can itself hang
-or get killed isn't watching anything). Register it as a Scheduled Task —
-run this once, from an elevated PowerShell prompt, adjusting the path if
-your clone lives somewhere else:
+or get killed isn't watching anything).
+
+Registering it as a Scheduled Task takes one command — `setup_watchdog_task.ps1`
+(repo root) does the whole thing: registers it to run at every startup *and*
+every 2 minutes, as SYSTEM so it works whether anyone's logged in or not, and
+runs it once immediately to confirm it worked. From an elevated PowerShell
+prompt, in the repo folder:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\path\to\police-chief-bot\watchdog.ps1"'
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration ([TimeSpan]::MaxValue)
-Register-ScheduledTask -TaskName "PoliceChiefBotWatchdog" -Action $action -Trigger $trigger -Description "Restarts Police Chief Bot if it stops responding" -RunLevel Highest
+.\setup_watchdog_task.ps1
 ```
 
+Same script whether this is your own PC or a Windows VPS — a VPS is just a
+Windows box you reach over RDP instead of sitting at, and Task Scheduler
+doesn't care which. Re-running it later (after moving the repo, say) safely
+replaces the old registration. To remove it: `Unregister-ScheduledTask
+-TaskName "PoliceChiefBotWatchdog"`.
+
 This also gives you the "runs unattended" behavior Option B (Docker) gets
-for free from its restart policy — worth doing on any Windows install left
-running without someone watching it.
+for free from its restart policy — worth doing on any install left running
+without someone watching it.
+
+### Linux VPS without Docker
+
+If you're running Option A directly on a Linux VPS (not Option B/Docker,
+which already restarts itself via its own restart policy), the same gap
+exists: nothing supervises the process, so a crash just leaves the bot down.
+`police-chief-bot.service` (repo root) is a systemd unit that restarts it on
+a crash or kill (not on a deliberate `systemctl stop`, and not on the bot's
+own in-place `os.execl()` restart — see `cogs/bot_restart.py` — since that
+never actually exits the process). Edit its `WorkingDirectory`/`ExecStart`
+paths to match where you cloned the repo, then enable it:
+
+```bash
+sudo cp police-chief-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now police-chief-bot
+```
 
 ## Option B: Docker
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=Police Chief Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/police-chief-bot
+ExecStart=/opt/police-chief-bot/bot_venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+# A crash-loop shouldn't hammer Discord's API forever unattended -- back
+# off after 5 restarts in 2 minutes rather than retrying indefinitely.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
