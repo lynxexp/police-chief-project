@@ -40,6 +40,7 @@ _PAUSE_REASON_PHRASES = {
     "send_forbidden": "the bot lost permission to send in the channel",
     "guild_kicked": "the bot was removed from the server",
     "startup_sweep": "the bot is no longer in the server",
+    "no_weekdays_configured": "it has no weekdays configured to repeat on",
 }
 
 
@@ -452,8 +453,11 @@ class NotificationSystem(commands.Cog):
             await self._pause_and_notify(channel_id=channel_id, reason="send_forbidden")
 
     async def _pause_and_notify(self, *, channel_id: int | None = None,
-                                guild_id: int | None = None, reason: str):
-        if channel_id is not None:
+                                guild_id: int | None = None,
+                                notification_id: int | None = None, reason: str):
+        if notification_id is not None:
+            where_sql, where_params = "id = ?", (notification_id,)
+        elif channel_id is not None:
             where_sql, where_params = "channel_id = ?", (channel_id,)
         elif guild_id is not None:
             where_sql, where_params = "guild_id = ?", (guild_id,)
@@ -544,6 +548,60 @@ class NotificationSystem(commands.Cog):
         except Exception as e:
             logger.error(f"Quarantine DM failed: {e}")
             print(f"[NOTIFICATIONS] Could not DM admins about paused notifications: {e}")
+
+    async def _send_missed_notification_dm(self, missed: list):
+        """Alerts global admins that one or more notifications went stale
+        without firing -- see the doc comment at the return site in
+        process_notification() for why this only ever fires on a genuine
+        miss (almost always: the bot was offline through the whole window),
+        never on a normal on-time send."""
+        try:
+            with sqlite3.connect('db\\settings.sqlite') as db:
+                admins = db.cursor().execute(
+                    "SELECT id FROM admin WHERE is_initial = 1"
+                ).fetchall()
+            if not admins:
+                logger.warning(f"{len(missed)} notification(s) missed but no global admin to notify")
+                return
+
+            lines = []
+            for m in missed[:10]:
+                desc = m["description"] or ""
+                if desc.startswith("CUSTOM_TIMES:"):
+                    parts = desc.split("|", 1)
+                    desc = parts[1] if len(parts) > 1 else ""
+                short = (desc[:50] + "...") if len(desc) > 50 else desc
+                if "EMBED_MESSAGE:" in short:
+                    short = "(Embed notification)"
+                missed_str = m["missed_time"].strftime("%Y-%m-%d %H:%M %Z")
+                next_str = m["rescheduled_time"].strftime("%Y-%m-%d %H:%M %Z")
+                lines.append(
+                    f"- **{m['event_type'] or 'Custom'}** in <#{m['channel_id']}> - {short}\n"
+                    f"   was due **{missed_str}**, next attempt **{next_str}**"
+                )
+            more = f"\n*…and {len(missed) - 10} more*" if len(missed) > 10 else ""
+
+            embed = discord.Embed(
+                title=f"{theme.warnIcon} Missed Notification(s)",
+                description=(
+                    f"**{len(missed)}** notification(s) were due while the bot wasn't polling "
+                    f"(most likely it was offline) and did **not** send:\n\n"
+                    + "\n".join(lines) + more
+                    + "\n\nThey've been rescheduled to their next occurrence above -- "
+                    "the missed one will not be sent retroactively."
+                ),
+                color=theme.emColor2,
+            )
+            for (admin_id,) in admins:
+                try:
+                    user = await self.bot.fetch_user(admin_id)
+                    if user:
+                        await user.send(embed=embed)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Missed-notification DM failed: {e}")
+            print(f"[NOTIFICATIONS] Could not DM admins about missed notifications: {e}")
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):
@@ -836,13 +894,19 @@ class NotificationSystem(commands.Cog):
                 notifications = self.cursor.fetchall()
 
                 now = datetime.now(pytz.UTC)
+                missed = []
                 for notification in notifications:
                     try:
-                        await self.process_notification(notification)
+                        result = await self.process_notification(notification)
+                        if result:
+                            missed.append(result)
                     except Exception as e:
                         logger.error(f"Error processing notification {notification[0]}: {e}")
                         print(f"Error processing notification {notification[0]}: {e}")
                         continue
+
+                if missed:
+                    await self._send_missed_notification_dm(missed)
 
             except Exception as e:
                 logger.error(f"Error in notification checker: {e}")
@@ -1008,6 +1072,7 @@ class NotificationSystem(commands.Cog):
             tz = pytz.timezone(timezone)
             now = datetime.now(tz)
             next_time = datetime.fromisoformat(next_notification)
+            missed_time = next_time
 
             if next_time < now:
                 if repeat_enabled:
@@ -1029,11 +1094,25 @@ class NotificationSystem(commands.Cog):
                             parts = row[0].split('|')
                             notification_days.update(int(p) for p in parts if p)
 
+                        matched = False
                         for next_day in range(1, 8):
                             potential_day = now + timedelta(days=next_day)
                             if potential_day.weekday() in notification_days:
                                 next_time = potential_day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                                matched = True
                                 break
+
+                        if not matched:
+                            # No weekday matched in a full week -- notification_days
+                            # is empty or corrupt, so this notification can never
+                            # legitimately fire. Leaving next_time unchanged would
+                            # write the same stale timestamp back and re-trigger
+                            # this exact branch (and a missed-notification alert)
+                            # on every subsequent poll tick, forever. Quarantine it
+                            # instead, same as any other permanently-broken
+                            # notification, and stop -- no reschedule, no alert.
+                            await self._pause_and_notify(notification_id=id, reason="no_weekdays_configured")
+                            return None
 
                     elif repeat_minutes == -2:
                         # Calendar-month custom event (see _next_monthly_custom_event_time)
@@ -1053,7 +1132,24 @@ class NotificationSystem(commands.Cog):
                     WHERE id = ?
                 """, (next_time.isoformat(), id))
                 self.conn.commit()
-                return
+
+                # This branch only runs when the entire fire window (every
+                # configured offset, down to "at event time") went by with
+                # nothing sent -- under normal polling, the on-time send
+                # path below advances next_notification itself right after
+                # firing, well before it could ever go stale. Reaching here
+                # means the bot wasn't polling through that whole window
+                # (almost always: it was offline) -- surface it rather than
+                # let the reschedule happen silently.
+                return {
+                    "id": id,
+                    "guild_id": guild_id,
+                    "channel_id": channel_id,
+                    "event_type": event_type,
+                    "description": description,
+                    "missed_time": missed_time,
+                    "rescheduled_time": next_time,
+                }
 
             time_until = next_time - now
             minutes_until = time_until.total_seconds() / 60
@@ -1420,11 +1516,30 @@ class NotificationSystem(commands.Cog):
                             parts = row[0].split('|')
                             notification_days.update(int(p) for p in parts if p)
 
+                        matched = False
                         for next_day in range(1, 8):
                             potential_day = now + timedelta(days=next_day)
                             if potential_day.weekday() in notification_days:
                                 next_time = potential_day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                                matched = True
                                 break
+
+                        if not matched:
+                            # Same empty/corrupt notification_days case as the
+                            # stale-check branch above, but reached right after
+                            # a successful send -- next_time here still equals
+                            # the event time that JUST fired, so leaving it
+                            # unchanged would make the very next poll treat this
+                            # notification as due again immediately. Quarantine
+                            # instead of resending or looping, but still notify
+                            # schedule boards about the send that DID just
+                            # succeed before bailing out (_pause_and_notify
+                            # commits its own change).
+                            await self._pause_and_notify(notification_id=id, reason="no_weekdays_configured")
+                            schedule_cog = self.bot.get_cog("NotificationSchedule")
+                            if schedule_cog:
+                                await schedule_cog.on_notification_sent(guild_id, channel_id)
+                            return
 
                     elif repeat_minutes == -2:
                         # Calendar-month custom event (see _next_monthly_custom_event_time)
