@@ -729,22 +729,22 @@ export interface StatusCheck {
 
 export interface SystemSnapshot {
   overall: "healthy" | "warning" | "error";
-  ocr: { status: string; summary: string };
+  ocr: { status: "healthy" | "warning" | "error"; summary: string };
   system: {
     uptime: string;
     latency_ms: number;
-    latency_status: string;
+    latency_status: "healthy" | "warning" | "error";
     loaded_cogs: number;
     python_version: string;
     platform: string;
     memory_msg: string | null;
-    memory_status: string;
+    memory_status: "healthy" | "warning" | "error";
   };
   disk: StatusCheck;
   database: StatusCheck;
   logs: StatusCheck;
   requirements: {
-    status: string;
+    status: "healthy" | "warning" | "error";
     missing: string[];
     outdated: { package: string; required: string; installed: string }[];
     ok_count: number;
