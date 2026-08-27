@@ -808,7 +808,15 @@ class _RestoreConfirmView(discord.ui.View):
         try:
             os.makedirs("db", exist_ok=True)
             for name in self.restored_names:
-                os.replace(
+                # shutil.move, not os.replace -- the staging dir lives under
+                # the system temp dir, which in a Docker deployment is on a
+                # different filesystem than a bind-mounted db/ volume.
+                # os.replace (like os.rename) can't cross that boundary and
+                # raises EXDEV ("Invalid cross-device link"); shutil.move
+                # already handles this by falling back to copy+delete when
+                # a same-filesystem rename isn't possible, while still doing
+                # a plain atomic rename (no fallback needed) whenever it is.
+                shutil.move(
                     os.path.join(self.stage_dir, name),
                     os.path.join("db", name),
                 )
