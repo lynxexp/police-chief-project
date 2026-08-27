@@ -3498,6 +3498,34 @@ class VaultTrack(commands.Cog):
                 logger.error(f"VaultTrack: failed to resume session: {e}")
                 ocr_resume.delete(key)
 
+        # Reviews posted before this process started have a Submit button
+        # that can no longer respond -- discord.py Views are in-memory only
+        # (see VaultHuntReviewView.save_pending_checkpoint's doc comment).
+        # Rather than leave a dead-looking button for someone to click into
+        # a silent failure, mark it clearly expired, same wording as a
+        # normal in-process timeout.
+        for key, payload in ocr_resume.load_all('vault_review'):
+            ocr_resume.delete(key)
+            try:
+                channel = self.bot.get_channel(payload.get('channel_id'))
+                if channel is None:
+                    continue
+                message = await channel.fetch_message(payload['message_id'])
+                embed = discord.Embed(
+                    title=f"{theme.hourglassIcon} Vault Trap Review Interrupted",
+                    description=(
+                        f"The bot restarted before this could be submitted, and "
+                        f"the Submit button no longer works. Upload the "
+                        f"screenshots again to start a new review."
+                    ),
+                    color=theme.emColor2,
+                )
+                await message.edit(content=None, embed=embed, view=None)
+            except discord.NotFound:
+                pass  # message already deleted -- nothing to warn about
+            except Exception as e:
+                logger.warning(f"VaultTrack: could not mark interrupted review as expired: {e}")
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
@@ -3842,12 +3870,14 @@ class VaultTrack(commands.Cog):
             try:
                 await session.progress_msg.edit(embed=embed, view=review)
                 review.message = session.progress_msg
+                review.save_pending_checkpoint()
                 return
             except Exception as e:
                 logger.warning(f"Vault Trap: could not edit progress into review: {e}")
         if channel:
             try:
                 review.message = await channel.send(embed=embed, view=review)
+                review.save_pending_checkpoint()
             except Exception as e:
                 logger.warning(f"Vault Trap: could not send review: {e}")
 
@@ -3919,6 +3949,7 @@ class VaultTrack(commands.Cog):
         )
         await interaction.response.send_message(embed=review.build_embed(), view=review)
         review.message = await interaction.original_response()
+        review.save_pending_checkpoint()
 
     @app_commands.command(name="vault_damage_view", description="View Vault Trap damage for an alliance")
     @app_commands.autocomplete(alliance=alliance_autocomplete, trap_number=trap_number_autocomplete)
@@ -4451,6 +4482,36 @@ class VaultHuntReviewView(discord.ui.View):
         self._sort_rows()
         self._build_components()
 
+    def _checkpoint_key(self) -> str | None:
+        return f"vaultreview:{self.message.id}" if self.message is not None else None
+
+    def save_pending_checkpoint(self):
+        """Persists just enough to find and clearly expire this review's
+        message after a restart -- NOT enough to reconstruct it. The
+        Submit button only exists in this process's memory; a restart
+        silently kills it (Discord shows the user a generic interaction
+        failure with no explanation), so this is a safety net rather than
+        real resume: on restart, VaultTrack.on_ready() edits the message
+        to say what happened and asks for a re-upload, same wording
+        on_timeout() already uses for the "went stale, start over" case.
+        Cleared the moment this review resolves any other way (submit,
+        cancel, or a normal in-process timeout)."""
+        key = self._checkpoint_key()
+        if key is None:
+            return
+        from . import ocr_resume
+        ocr_resume.save(key, 'vault_review', {
+            'channel_id': self.message.channel.id,
+            'message_id': self.message.id,
+        })
+
+    def _clear_pending_checkpoint(self):
+        key = self._checkpoint_key()
+        if key is None:
+            return
+        from . import ocr_resume
+        ocr_resume.delete(key)
+
     async def _notify_tracker_submit(self):
         # Cleanup must never break submit UX.
         if self.auto_delete_tracker and not self._tracker_resolved:
@@ -4846,6 +4907,7 @@ class VaultHuntReviewView(discord.ui.View):
             )
             if submitted:
                 await self._notify_tracker_submit()
+                self._clear_pending_checkpoint()
                 self.stop()  # resolve so a stale timeout can't deface the posted hunt
         except Exception as e:
             logger.error(f"Error in vault review submit: {e}")
@@ -4856,6 +4918,7 @@ class VaultHuntReviewView(discord.ui.View):
                 )
             except Exception:
                 pass
+            self._clear_pending_checkpoint()
             self.stop()  # resolve so a stale timeout can't later deface the message
 
     async def _on_cancel(self, interaction):
@@ -4867,9 +4930,11 @@ class VaultHuntReviewView(discord.ui.View):
         )
         await interaction.response.edit_message(content=None, embed=embed, view=None)
         await self._notify_tracker_cancel()
+        self._clear_pending_checkpoint()
         self.stop()
 
     async def on_timeout(self):
+        self._clear_pending_checkpoint()
         for item in self.children:
             item.disabled = True
         if self.message is not None:
