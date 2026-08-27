@@ -165,9 +165,25 @@ git push origin $tag
 
 # --- Publish the GitHub Release -------------------------------------------
 
-$ghArgs = @("release", "create", $tag, "--title", $tag, "--notes", $releaseNotes)
-if ($Draft) { $ghArgs += "--draft" }
-gh @ghArgs
+# --notes-file, not --notes <string> -- commit messages routinely contain
+# double quotes (e.g. a message quoting a UI string), and passing that
+# through as a raw CLI argument broke unpredictably depending on which
+# shell layer gh's install re-parses arguments through on this machine
+# (seen failing with a bash-style "no matches found" glob error on a
+# message containing embedded quotes). A file has no such ambiguity
+# regardless of shell involved.
+$notesFile = New-TemporaryFile
+Set-Content -Path $notesFile -Value $releaseNotes -Encoding utf8NoBOM
+try {
+    $ghArgs = @("release", "create", $tag, "--title", $tag, "--notes-file", $notesFile)
+    if ($Draft) { $ghArgs += "--draft" }
+    gh @ghArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh release create failed (exit $LASTEXITCODE) -- the tag $tag was already pushed, so re-running this script would try to create a duplicate tag. Publish the release manually instead: gh release create $tag --title $tag --notes-file <file>"
+    }
+} finally {
+    Remove-Item $notesFile -ErrorAction SilentlyContinue
+}
 
 Write-Host ""
 if ($Draft) {
