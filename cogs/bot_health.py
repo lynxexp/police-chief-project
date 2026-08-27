@@ -139,10 +139,13 @@ class BotHealth(commands.Cog):
         self._api_cache_at: datetime | None = None
         self._api_refresh_task: asyncio.Task | None = None
 
+        self.heartbeat_path = "heartbeat.txt"
+
         self._setup_database()
         self.maintenance_loop.start()
         self.update_bot_footprint_loop.start()
         self.api_status_loop.start()
+        self.heartbeat_loop.start()
         self.logger.info("[HEALTH] Bot Health cog initialized")
 
     def _db(self, path: str, timeout: float = 30.0) -> sqlite3.Connection:
@@ -1276,6 +1279,23 @@ class BotHealth(commands.Cog):
     async def before_update_bot_footprint_loop(self):
         await self.bot.wait_until_ready()
 
+    @tasks.loop(seconds=30)
+    async def heartbeat_loop(self):
+        """Writes a liveness timestamp an external watchdog (see watchdog.ps1)
+        polls to decide whether the process needs restarting. A plain file
+        rather than a DB row -- it must stay readable/writable even if a
+        database is locked or corrupted, since those are exactly the kinds
+        of failure this is meant to catch."""
+        try:
+            with open(self.heartbeat_path, "w") as f:
+                f.write(datetime.now(timezone.utc).isoformat())
+        except Exception as e:
+            self.logger.warning(f"Heartbeat write failed: {e}")
+
+    @heartbeat_loop.before_loop
+    async def before_heartbeat_loop(self):
+        await self.bot.wait_until_ready()
+
     @staticmethod
     def _compute_bot_footprint_mb() -> float:
         """Total on-disk size of the bot dir (in a thread). Includes the venv and
@@ -1306,6 +1326,8 @@ class BotHealth(commands.Cog):
             self.update_bot_footprint_loop.cancel()
         if self.api_status_loop.is_running():
             self.api_status_loop.cancel()
+        if self.heartbeat_loop.is_running():
+            self.heartbeat_loop.cancel()
         if self._api_refresh_task and not self._api_refresh_task.done():
             self._api_refresh_task.cancel()
         self.logger.info("[HEALTH] Bot Health cog unloaded")

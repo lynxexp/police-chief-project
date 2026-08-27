@@ -67,6 +67,29 @@ something in the bot triggers a restart (the Restart Bot button, or a
 successful `/restore`), it exits cleanly and prints the exact command to run
 again. On Linux/Mac it restarts itself in place automatically.
 
+This also means an **unexpected** exit (a crash, or the process getting
+killed) needs the same manual `python main.py` — and unless someone notices,
+the bot can simply stay down with no reminder for anyone that it happened.
+`watchdog.ps1` (repo root) closes that gap: it checks a heartbeat the bot
+writes every 30 seconds (`heartbeat.txt`, via `cogs/bot_health.py`) and, if
+it's gone stale — dead process or a hung one — kills anything still running
+and starts a fresh `python main.py`, logging what it did to `watchdog.log`.
+It's a check-once-and-exit script, meant to run on a repeating schedule
+rather than as its own long-lived process (a watchdog that can itself hang
+or get killed isn't watching anything). Register it as a Scheduled Task —
+run this once, from an elevated PowerShell prompt, adjusting the path if
+your clone lives somewhere else:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\path\to\police-chief-bot\watchdog.ps1"'
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration ([TimeSpan]::MaxValue)
+Register-ScheduledTask -TaskName "PoliceChiefBotWatchdog" -Action $action -Trigger $trigger -Description "Restarts Police Chief Bot if it stops responding" -RunLevel Highest
+```
+
+This also gives you the "runs unattended" behavior Option B (Docker) gets
+for free from its restart policy — worth doing on any Windows install left
+running without someone watching it.
+
 ## Option B: Docker
 
 Better suited to a VPS or home server you want running unattended. A
