@@ -83,6 +83,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      # containrrr/watchtower's bundled Docker client defaults to a very
+      # old API version (seen negotiating as low as 1.25) that current
+      # Docker Engine releases refuse outright ("client version ... is
+      # too old, minimum supported API version is 1.40"). Pinning this
+      # forces it to speak a version modern daemons actually accept;
+      # check `docker version --format '{{.Server.APIVersion}}'` on the
+      # host if this ever needs bumping again.
+      - DOCKER_API_VERSION=1.44
       # Only touches containers carrying the label above -- caddy and
       # watchtower itself are never in scope.
       - WATCHTOWER_LABEL_ENABLE=true
