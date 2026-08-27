@@ -37,7 +37,11 @@ jobs:
       - name: Build and Push Image
         uses: docker/build-push-action@v6
         with:
-          context: docker
+          # Repo root, not `docker` -- the Dockerfile's own COPY . /app
+          # needs requirements.txt, main.py, and cogs/ from the actual
+          # repo root; the docker/ subfolder only holds the Dockerfile
+          # itself and its two build-time helpers.
+          context: .
           file: docker/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm

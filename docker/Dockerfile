@@ -3,7 +3,7 @@ FROM python:3.12.12-slim-bookworm
 LABEL maintainer="police-chief-bot"
 LABEL org.opencontainers.image.description="Police Chief Discord bot"
 
-COPY bootstrap.sh /bootstrap.sh
+COPY docker/bootstrap.sh /bootstrap.sh
 
 RUN set -x
 RUN apt-get update && apt-get install --no-install-recommends -y curl ca-certificates
