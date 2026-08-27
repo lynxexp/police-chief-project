@@ -35,6 +35,8 @@ const COMMAND_LABELS: Record<BotCommand, string> = {
   reload_cogs: "Reload All Cogs",
   clear_queue: "Clear Queue",
   restart: "Restart Bot",
+  check_updates: "Check Now",
+  run_update: "Update",
 };
 
 /** Owner-only. Mirrors the Discord bot's /health dashboard -- see
@@ -49,6 +51,7 @@ export default function AdminSystemHealth() {
   });
 
   const [confirmingRestart, setConfirmingRestart] = useState(false);
+  const [confirmingUpdate, setConfirmingUpdate] = useState(false);
   const [lastResult, setLastResult] = useState<{ command: BotCommand; message: string; isError: boolean } | null>(null);
 
   const toggleMutation = useMutation({
@@ -79,10 +82,12 @@ export default function AdminSystemHealth() {
       }
       queryClient.invalidateQueries({ queryKey: ["admin-system-status"] });
       setConfirmingRestart(false);
+      setConfirmingUpdate(false);
     },
     onError: (err: Error, command) => {
       setLastResult({ command, message: err.message, isError: true });
       setConfirmingRestart(false);
+      setConfirmingUpdate(false);
     },
   });
 
@@ -102,6 +107,14 @@ export default function AdminSystemHealth() {
     }
     if (command === "restart") {
       return typeof r.note === "string" ? r.note : "Restarting.";
+    }
+    if (command === "check_updates") {
+      if (!r.checked) return "Couldn't reach GitHub -- try again in a moment.";
+      if (r.isNewer) return `${r.latestVersion} is available (you're on ${r.localVersion}).`;
+      return `Up to date (${r.localVersion}).`;
+    }
+    if (command === "run_update") {
+      return typeof r.message === "string" ? r.message : "Done.";
     }
     return "Done.";
   }
@@ -140,17 +153,55 @@ export default function AdminSystemHealth() {
               ) : (
                 <Badge variant="success">Up to date</Badge>
               )}
+              <button
+                onClick={() => commandMutation.mutate("check_updates")}
+                disabled={commandMutation.isPending}
+                className={buttonSecondary}
+              >
+                {commandMutation.isPending && commandMutation.variables === "check_updates" ? "Checking…" : "Check Now"}
+              </button>
             </div>
 
             {snapshot.latestRelease && snapshot.latestRelease.tag_name !== snapshot.version && (
-              <div className="mt-3 space-y-1 text-xs text-slate-500">
-                <p>To update, run one of these from the bot's folder:</p>
-                <p className="rounded bg-slate-950 px-2 py-1 font-mono text-slate-300">
-                  {snapshot.isWindowsHost ? "update.ps1" : "./update.sh"}
-                </p>
-                <p>
-                  Docker: <span className="font-mono text-slate-300">git pull && docker compose up -d --build</span>
-                </p>
+              <div className="mt-3 space-y-2">
+                {snapshot.isContainer ? (
+                  <div className="space-y-1 text-xs text-slate-500">
+                    <p>
+                      Docker deployment -- a container can't rebuild its own image, so this has
+                      to happen on the host:
+                    </p>
+                    <p className="rounded bg-slate-950 px-2 py-1 font-mono text-slate-300">
+                      git pull && docker compose pull && docker compose up -d
+                    </p>
+                  </div>
+                ) : confirmingUpdate ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => commandMutation.mutate("run_update")}
+                      disabled={commandMutation.isPending}
+                      className={buttonDanger}
+                    >
+                      {commandMutation.isPending && commandMutation.variables === "run_update"
+                        ? "Updating…"
+                        : "Confirm Update"}
+                    </button>
+                    <button onClick={() => setConfirmingUpdate(false)} className={buttonSecondary}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmingUpdate(true)} className={buttonPrimary}>
+                    Update
+                  </button>
+                )}
+                {!snapshot.isContainer && confirmingUpdate && (
+                  <p className="text-xs text-slate-500">
+                    Pulls the latest code, reinstalls dependencies only if they changed, and
+                    restarts the bot.
+                    {snapshot.isWindowsHost &&
+                      " Windows host detected: it will stop and won't auto-restart unless watchdog.ps1 is set up."}
+                  </p>
+                )}
               </div>
             )}
 

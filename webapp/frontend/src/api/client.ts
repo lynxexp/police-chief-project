@@ -757,6 +757,7 @@ export interface SystemSnapshot {
   latestRelease: { tag_name: string; name: string; html_url: string } | null;
   updateCheckEnabled: boolean;
   isWindowsHost: boolean;
+  isContainer: boolean;
   generatedAt: string;
 }
 
@@ -776,7 +777,13 @@ export function setUpdateCheckEnabled(enabled: boolean): Promise<{ ok: true; ena
   });
 }
 
-export type BotCommand = "run_cleanup" | "reload_cogs" | "clear_queue" | "restart";
+export type BotCommand =
+  | "run_cleanup"
+  | "reload_cogs"
+  | "clear_queue"
+  | "restart"
+  | "check_updates"
+  | "run_update";
 
 export interface BotCommandResponse {
   status: "done" | "error" | "pending";

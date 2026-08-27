@@ -2665,6 +2665,250 @@ class AllianceMemberOperations(commands.Cog):
                     ephemeral=True
                 )
 
+    # -------------------------------------------------------------------
+    # /registered -- who has linked Discord vs. the full roster
+    # -------------------------------------------------------------------
+
+    async def _resolve_registered_alliance_param(
+        self, interaction: discord.Interaction, alliance: str | None
+    ) -> int | None:
+        """Same shortcut as vault_track.py's _resolve_alliance_param: the
+        `alliance` option is optional when the admin manages exactly one."""
+        if alliance:
+            try:
+                return int(alliance)
+            except ValueError:
+                await interaction.response.send_message(
+                    f"{theme.deniedIcon} Invalid alliance selected.", ephemeral=True
+                )
+                return None
+
+        is_admin, is_global = PermissionManager.is_admin(interaction.user.id)
+        if not is_admin:
+            await interaction.response.send_message(
+                f"{theme.deniedIcon} Please specify an alliance.", ephemeral=True
+            )
+            return None
+
+        guild_id = interaction.guild_id if interaction.guild else 0
+        if is_global:
+            rows = self.c_alliance.execute("SELECT alliance_id FROM alliance_list").fetchall()
+            alliance_ids = [row[0] for row in rows]
+        else:
+            alliance_ids, _ = PermissionManager.get_admin_alliance_ids(interaction.user.id, guild_id)
+
+        if not alliance_ids:
+            await interaction.response.send_message(
+                f"{theme.deniedIcon} No alliances found for your permissions.", ephemeral=True
+            )
+            return None
+        if len(alliance_ids) > 1:
+            await interaction.response.send_message(
+                f"{theme.deniedIcon} You manage multiple alliances — please specify which one with the `alliance` option.",
+                ephemeral=True
+            )
+            return None
+        return alliance_ids[0]
+
+    async def registered_alliance_autocomplete(self, interaction: discord.Interaction, current: str):
+        def _query():
+            return self.c_alliance.execute(
+                "SELECT alliance_id, name FROM alliance_list WHERE name LIKE ? ORDER BY name LIMIT 20",
+                (f"%{current}%",),
+            ).fetchall()
+        rows = await asyncio.to_thread(_query)
+        return [
+            discord.app_commands.Choice(name=row[1], value=str(row[0]))
+            for row in rows
+        ]
+
+    @app_commands.command(
+        name="registered",
+        description="See how many alliance members have linked their Discord account",
+    )
+    @app_commands.autocomplete(alliance=registered_alliance_autocomplete)
+    @app_commands.describe(
+        alliance="Select an alliance (optional if you only manage one)",
+        include_inactive="Include deactivated members in the total (default: active only)",
+    )
+    async def registered(
+        self,
+        interaction: discord.Interaction,
+        alliance: str | None = None,
+        include_inactive: bool = False,
+    ):
+        alliance_id = await self._resolve_registered_alliance_param(interaction, alliance)
+        if alliance_id is None:
+            return
+
+        row = self.c_alliance.execute(
+            "SELECT name FROM alliance_list WHERE alliance_id = ?", (alliance_id,)
+        ).fetchone()
+        if not row:
+            await interaction.response.send_message(
+                f"{theme.deniedIcon} Alliance not found.", ephemeral=True
+            )
+            return
+        alliance_name = row[0]
+
+        query = (
+            "SELECT fid, nickname, discord_id, discord_id_updated_at FROM users "
+            "WHERE alliance = ?"
+        )
+        params = [str(alliance_id)]
+        if not include_inactive:
+            query += " AND is_active = 1"
+        rows = self.c_users.execute(query, params).fetchall()
+
+        view = RegisteredMembersView(rows, alliance_name, include_inactive, interaction.user.id)
+        await interaction.response.send_message(embed=view.build_embed(), view=view)
+
+class RegisteredMembersView(discord.ui.View):
+    """Paginated Registered / Not Registered lists for /registered, mirroring
+    the web dashboard's Admin Members registration filter (same "X of Y
+    registered" framing) so the two surfaces read the same way."""
+
+    PAGE_SIZE = 20
+
+    def __init__(self, rows, alliance_name: str, include_inactive: bool, author_id: int):
+        super().__init__(timeout=7200)
+        # rows: (fid, nickname, discord_id, discord_id_updated_at)
+        self.all_members = [
+            {'fid': fid, 'nickname': nickname or '(no name)',
+             'discord_id': discord_id, 'linked_at': linked_at}
+            for fid, nickname, discord_id, linked_at in rows
+        ]
+        self.alliance_name = alliance_name
+        self.include_inactive = include_inactive
+        self.author_id = author_id
+        self.showing = "registered"  # or "unregistered"
+        self.page = 0
+        self._build_components()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                f"{theme.deniedIcon} Only the user who ran this command can use these controls.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    def _registered(self):
+        return [m for m in self.all_members if m['discord_id']]
+
+    def _unregistered(self):
+        return [m for m in self.all_members if not m['discord_id']]
+
+    def _current_list(self):
+        items = self._registered() if self.showing == "registered" else self._unregistered()
+        return sorted(items, key=lambda m: m['nickname'].casefold())
+
+    def _build_components(self):
+        self.clear_items()
+        items = self._current_list()
+        total_pages = max(1, (len(items) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.page >= total_pages:
+            self.page = max(0, total_pages - 1)
+
+        prev_btn = discord.ui.Button(
+            emoji=theme.prevIcon, style=discord.ButtonStyle.secondary,
+            disabled=self.page == 0, row=0,
+        )
+        prev_btn.callback = self._on_prev
+        self.add_item(prev_btn)
+
+        next_btn = discord.ui.Button(
+            emoji=theme.nextIcon, style=discord.ButtonStyle.secondary,
+            disabled=self.page >= total_pages - 1, row=0,
+        )
+        next_btn.callback = self._on_next
+        self.add_item(next_btn)
+
+        toggle_label = "Show Not Registered" if self.showing == "registered" else "Show Registered"
+        toggle_btn = discord.ui.Button(
+            label=toggle_label, emoji=theme.searchIcon,
+            style=discord.ButtonStyle.primary, row=1,
+        )
+        toggle_btn.callback = self._on_toggle
+        self.add_item(toggle_btn)
+
+    def build_embed(self) -> discord.Embed:
+        registered_count = len(self._registered())
+        total = len(self.all_members)
+        items = self._current_list()
+        total_pages = max(1, (len(items) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        start = self.page * self.PAGE_SIZE
+        page_items = items[start:start + self.PAGE_SIZE]
+
+        scope = "all members" if self.include_inactive else "active members"
+        header = [
+            f"{theme.upperDivider}",
+            f"{theme.verifiedIcon} **{registered_count}** of **{total}** {scope} registered",
+            f"{theme.listIcon} Showing: **{'Registered' if self.showing == 'registered' else 'Not Registered'}**",
+            f"{theme.lowerDivider}",
+        ]
+
+        if not page_items:
+            label = "registered" if self.showing == "registered" else "unregistered"
+            body = f"\n{theme.deniedIcon} No {label} members."
+        else:
+            lines = []
+            for offset, m in enumerate(page_items, start=start + 1):
+                if m['discord_id']:
+                    linked = f" · linked {_registered_relative_age(m['linked_at'])}" if m['linked_at'] else ""
+                    lines.append(
+                        f"`{offset:>3}.` {theme.userIcon} **{m['nickname']}** "
+                        f"— <@{m['discord_id']}>{linked}"
+                    )
+                else:
+                    lines.append(f"`{offset:>3}.` {theme.userIcon} **{m['nickname']}** — not registered")
+            body = "\n".join(lines)
+
+        embed = discord.Embed(
+            title=f"{theme.userIcon} {self.alliance_name} — Registration Status",
+            description="\n".join(header) + "\n" + body,
+            color=theme.emColor1,
+        )
+        embed.set_footer(text=f"Page {self.page + 1}/{total_pages}")
+        return embed
+
+    async def _rerender(self, interaction: discord.Interaction):
+        self._build_components()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    async def _on_prev(self, interaction: discord.Interaction):
+        if self.page > 0:
+            self.page -= 1
+        await self._rerender(interaction)
+
+    async def _on_next(self, interaction: discord.Interaction):
+        items = self._current_list()
+        total_pages = max(1, (len(items) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.page < total_pages - 1:
+            self.page += 1
+        await self._rerender(interaction)
+
+    async def _on_toggle(self, interaction: discord.Interaction):
+        self.showing = "unregistered" if self.showing == "registered" else "registered"
+        self.page = 0
+        await self._rerender(interaction)
+
+
+def _registered_relative_age(iso_ts: str | None) -> str:
+    """Discord relative timestamp, same convention as /w's linked-since
+    display (alliance_w_command.py's _relative_age)."""
+    if not iso_ts:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return f"<t:{int(dt.timestamp())}:R>"
+    except (ValueError, OSError):
+        return ""
+
+
 class AddMemberModal(discord.ui.Modal):
     def __init__(self, alliance_id):
         super().__init__(title="Add Member")

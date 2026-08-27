@@ -21,6 +21,7 @@ export default function AdminMembers() {
   const [activeOnly, setActiveOnly] = useState(false);
   const [linkingFid, setLinkingFid] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [registrationFilter, setRegistrationFilter] = useState<"all" | "registered" | "unregistered">("all");
 
   const queryClient = useQueryClient();
   const queryKey = ["admin-alliance-members", allianceId, activeOnly];
@@ -31,7 +32,14 @@ export default function AdminMembers() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
+  // Count against the currently loaded set (respects the Active-only
+  // toggle above) so "X of Y" always matches what's actually on screen
+  // before the search box narrows it further.
+  const registeredCount = (data ?? []).filter((m) => m.discordId).length;
+
   const filtered = (data ?? []).filter((m) => {
+    if (registrationFilter === "registered" && !m.discordId) return false;
+    if (registrationFilter === "unregistered" && m.discordId) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
     if (/^\d+$/.test(q) && String(m.fid).includes(q)) return true;
@@ -76,14 +84,33 @@ export default function AdminMembers() {
 
       {data && (
         <>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or fid…"
-            className="mb-3 w-full max-w-sm rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
-          />
+          <p className="mb-3 text-sm text-slate-400">
+            <span className="font-medium text-slate-200">{registeredCount}</span> of{" "}
+            <span className="font-medium text-slate-200">{data.length}</span> registered
+          </p>
+          <div className="mb-3 flex flex-wrap gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or fid…"
+              className="w-full max-w-sm rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
+            />
+            <select
+              value={registrationFilter}
+              onChange={(e) =>
+                setRegistrationFilter(e.target.value as "all" | "registered" | "unregistered")
+              }
+              className="rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
+            >
+              <option value="all">All members</option>
+              <option value="registered">Registered only</option>
+              <option value="unregistered">Not registered</option>
+            </select>
+          </div>
           {filtered.length === 0 && data.length > 0 && (
-            <p className="mb-3 text-sm text-slate-500">No members match "{search}".</p>
+            <p className="mb-3 text-sm text-slate-500">
+              No members match{search.trim() ? ` "${search}"` : " this filter"}.
+            </p>
           )}
           {data.length === 0 && (
             <p className="mb-3 text-sm text-slate-500">No members found.</p>

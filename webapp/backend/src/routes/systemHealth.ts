@@ -30,7 +30,14 @@ import { settingsDb } from "../db/connections.js";
 import { resolveAuthContext } from "../auth/context.js";
 import { logAppAction } from "../audit.js";
 
-const ALLOWED_COMMANDS = ["run_cleanup", "reload_cogs", "clear_queue", "restart"] as const;
+const ALLOWED_COMMANDS = [
+  "run_cleanup",
+  "reload_cogs",
+  "clear_queue",
+  "restart",
+  "check_updates",
+  "run_update",
+] as const;
 type BotCommand = (typeof ALLOWED_COMMANDS)[number];
 
 const commandBody = {

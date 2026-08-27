@@ -1286,20 +1286,22 @@ class BotHealth(commands.Cog):
             self.logger.warning(f"Update check failed: {e}")
             return None
 
-    @tasks.loop(hours=6)
-    async def update_check_loop(self):
-        """Checks GitHub for a newer release than the one this install is
-        running, once at startup and every 6 hours after. DMs the Global
-        Admin exactly once per new version (tracked via last_notified_version
-        so a restart, or six more hours passing, doesn't repeat the DM for
-        a release they've already been told about)."""
+    async def _run_update_check(self, *, respect_enabled_toggle: bool = True) -> dict:
+        """Core update-check logic, shared by the scheduled 6h loop and the
+        on-demand "Check now" trigger (Discord button or web dashboard).
+        Always refreshes _cached_latest_release, even when nothing's newer,
+        so a manual check reflects immediately wherever the dashboard reads
+        it from. DMs the Global Admin exactly once per new version (tracked
+        via last_notified_version so a restart, six more hours passing, or
+        someone clicking "Check now" doesn't repeat a DM they've already
+        gotten for that release)."""
         config = self.get_config()
-        if not config.get('update_check_enabled', 1):
-            return
+        if respect_enabled_toggle and not config.get('update_check_enabled', 1):
+            return {'checked': False, 'reason': 'disabled'}
 
         release = await self._fetch_latest_release()
         if not release or not release['tag_name']:
-            return
+            return {'checked': False, 'reason': 'unavailable'}
         self._cached_latest_release = release
 
         local_version = self._read_local_version()
@@ -1307,19 +1309,122 @@ class BotHealth(commands.Cog):
             is_newer = parse_version(release['tag_name'].lstrip('vV')) > parse_version(local_version.lstrip('vV'))
         except Exception:
             # An unparseable version string (local or remote) should never
-            # crash the loop -- just skip the comparison this cycle.
-            return
-        if not is_newer:
-            return
-        if config.get('last_notified_version') == release['tag_name']:
-            return
+            # crash the check -- just skip the comparison this cycle.
+            return {
+                'checked': True, 'localVersion': local_version,
+                'latestVersion': release['tag_name'], 'isNewer': None,
+            }
 
-        self.update_config(last_notified_version=release['tag_name'])
-        await self._notify_update_available(local_version, release)
+        if is_newer and config.get('last_notified_version') != release['tag_name']:
+            self.update_config(last_notified_version=release['tag_name'])
+            await self._notify_update_available(local_version, release)
+
+        return {
+            'checked': True, 'localVersion': local_version,
+            'latestVersion': release['tag_name'], 'isNewer': is_newer,
+        }
+
+    @tasks.loop(hours=6)
+    async def update_check_loop(self):
+        """Checks GitHub for a newer release than the one this install is
+        running, once at startup and every 6 hours after. See
+        _run_update_check for the actual logic."""
+        await self._run_update_check()
 
     @update_check_loop.before_loop
     async def before_update_check_loop(self):
         await self.bot.wait_until_ready()
+
+    async def perform_update(self) -> dict:
+        """Mirrors update.sh/update.ps1 exactly (git fetch/compare/pull,
+        conditionally reinstall deps, then restart) so the web dashboard's
+        Update button does the same thing those scripts do, not a
+        reimplementation with its own edge cases.
+
+        Refuses outright in a container: .dockerignore excludes .git from
+        the image entirely, so there's no repo here to pull from, and a
+        running container can't rebuild its own image anyway -- that's a
+        build-and-redeploy operation on the host, not something this
+        process can do to itself."""
+        if is_container():
+            return {
+                'updated': False, 'reason': 'container',
+                'message': (
+                    "This is a Docker deployment -- there's no git repo inside "
+                    "the container to pull, and a container can't rebuild its "
+                    "own image from within itself. Update from the host instead: "
+                    "git pull && docker compose pull && docker compose up -d "
+                    "(or add --build if you build the bot image locally rather "
+                    "than pulling it)."
+                ),
+            }
+
+        def _run(*args):
+            return subprocess.run(args, capture_output=True, text=True, timeout=120)
+
+        branch_res = await asyncio.to_thread(_run, "git", "rev-parse", "--abbrev-ref", "HEAD")
+        branch = branch_res.stdout.strip() or "master"
+
+        fetch_res = await asyncio.to_thread(_run, "git", "fetch", "origin", branch)
+        if fetch_res.returncode != 0:
+            return {
+                'updated': False, 'reason': 'fetch_failed',
+                'message': f"git fetch failed: {fetch_res.stderr.strip()[:500]}",
+            }
+
+        behind_res = await asyncio.to_thread(
+            _run, "git", "rev-list", "--count", f"HEAD..origin/{branch}"
+        )
+        behind = behind_res.stdout.strip()
+        if behind == "0":
+            return {'updated': False, 'reason': 'up_to_date', 'message': "Already up to date."}
+
+        reqs_res = await asyncio.to_thread(
+            _run, "git", "diff", "--name-only", f"HEAD..origin/{branch}", "--", "requirements.txt"
+        )
+        reqs_changed = bool(reqs_res.stdout.strip())
+
+        pull_res = await asyncio.to_thread(_run, "git", "pull", "origin", branch)
+        if pull_res.returncode != 0:
+            return {
+                'updated': False, 'reason': 'pull_failed',
+                'message': (
+                    "git pull failed -- there's likely a local edit conflicting "
+                    f"with the update; resolve it on the host, then try again.\n"
+                    f"{pull_res.stderr.strip()[:500]}"
+                ),
+            }
+
+        if reqs_changed:
+            pip_exe = os.path.join(
+                "bot_venv",
+                "Scripts" if sys.platform == "win32" else "bin",
+                "pip.exe" if sys.platform == "win32" else "pip",
+            )
+            if os.path.exists(pip_exe):
+                pip_res = await asyncio.to_thread(_run, pip_exe, "install", "-r", "requirements.txt")
+                if pip_res.returncode != 0:
+                    return {
+                        'updated': True, 'restarting': False, 'reason': 'pip_failed',
+                        'commits': int(behind),
+                        'message': (
+                            f"Pulled {behind} commit(s), but reinstalling dependencies "
+                            f"failed -- fix this on the host, then restart manually.\n"
+                            f"{pip_res.stderr.strip()[:500]}"
+                        ),
+                    }
+
+        windows_manual = sys.platform == 'win32' and not is_container()
+        return {
+            'updated': True,
+            'commits': int(behind),
+            'restarting': not windows_manual,
+            'message': (
+                f"Pulled {behind} commit(s). "
+                + (self._restart_note() if windows_manual
+                   else "Restarting now -- it'll reconnect automatically.")
+            ),
+        }
 
     async def _notify_update_available(self, local_version: str, release: dict):
         try:
@@ -1404,6 +1509,10 @@ class BotHealth(commands.Cog):
                 result = {'removed': removed}
             elif command == 'restart':
                 result = {'note': self._restart_note()}
+            elif command == 'check_updates':
+                result = await self._run_update_check(respect_enabled_toggle=False)
+            elif command == 'run_update':
+                result = await self.perform_update()
             else:
                 error = f"Unknown command: {command}"
         except Exception as e:
@@ -1425,7 +1534,10 @@ class BotHealth(commands.Cog):
         except Exception as e:
             self.logger.error(f"Could not write result for command {cmd_id}: {e}")
 
-        if command == 'restart' and not error:
+        should_restart = command == 'restart' or (
+            command == 'run_update' and not error and result and result.get('restarting')
+        )
+        if should_restart:
             # Give the UPDATE above (and the web backend's poll) a moment to
             # land before this process actually goes away.
             await asyncio.sleep(1)
@@ -1465,6 +1577,7 @@ class BotHealth(commands.Cog):
             'latestRelease': self._cached_latest_release,
             'updateCheckEnabled': bool(config.get('update_check_enabled', 1)),
             'isWindowsHost': sys.platform == 'win32' and not is_container(),
+            'isContainer': is_container(),
             'generatedAt': datetime.now(timezone.utc).isoformat(),
         }
 
