@@ -196,38 +196,41 @@ this ever changes). Leave `TRUST_PROXY=false` for now — it flips to
 
 ### 8. Get the images
 
-The webapp has no published image (no CI pipeline builds one yet) — it's
-always built locally:
+Both the bot and the webapp have published images now — the bot from
+`.github/workflows/docker.yml`, the webapp from
+`.github/workflows/docker-webapp.yml` — built and pushed on every release
+(`ghcr.io/lynxexp/bot:latest` and `ghcr.io/lynxexp/webapp:latest`,
+matching `docker/docker-compose.yml`'s defaults) — **but only once each
+package's visibility is set to Public**. GitHub packages published with
+the default `GITHUB_TOKEN` start out private even on a public repository
+— they're two separate packages, so this is two separate one-time
+checks: `github.com/users/lynxexp/packages/container/bot/settings` and
+`.../packages/container/webapp/settings`, each → **Danger Zone** →
+**Change visibility**. Once both are public:
 
 ```bash
-docker build -t police-chief-webapp:latest -f webapp/Dockerfile .
+docker compose -f docker/docker-compose.yml pull
 ```
 
-The bot does have a published image, built and pushed by
-`.github/workflows/docker.yml` on every release
-(`ghcr.io/lynxexp/bot:latest`, matching `docker/docker-compose.yml`'s
-default) — **but only once that package's visibility is set to Public**.
-GitHub packages published with the default `GITHUB_TOKEN` start out
-private even on a public repository, so check this once at
-`github.com/users/lynxexp/packages/container/bot/settings` → **Danger
-Zone** → **Change visibility**. Once it's public:
-
-```bash
-docker compose -f docker/docker-compose.yml pull police-chief-bot
-```
-
-If you'd rather not depend on the registry at all (or the package is
-still private), build the bot locally instead and point the compose file
+If you'd rather not depend on the registry at all (or a package is still
+private), build either one locally instead and point the compose file
 back at the local tag:
 
 ```bash
 docker build -t police-chief-bot:latest -f docker/Dockerfile .
+docker build -t police-chief-webapp:latest -f webapp/Dockerfile .
 ```
 ```yaml
 # docker/docker-compose.yml
 police-chief-bot:
   image: police-chief-bot:latest   # instead of ghcr.io/lynxexp/bot:latest
+police-chief-webapp:
+  image: police-chief-webapp:latest   # instead of ghcr.io/lynxexp/webapp:latest
 ```
+
+Building locally also means dropping that service's
+`com.centurylinklabs.watchtower.enable` label (see step 12) — Watchtower
+can only see newer versions of an image it can actually pull.
 
 ### 9. Start everything
 
@@ -256,17 +259,38 @@ pointed at this VPS in step 4.
 
 ### 12. Staying updated
 
+Manually:
+
 ```bash
 cd /opt/docker/police-chief-bot/src
 git pull
-docker compose -f docker/docker-compose.yml build police-chief-webapp
-docker compose -f docker/docker-compose.yml pull police-chief-bot   # or rebuild it locally, matching whichever you chose in step 8
+docker compose -f docker/docker-compose.yml pull   # or `build <service>` for whichever you build locally
 docker compose -f docker/docker-compose.yml up -d
 ```
 
 Same "never discards local changes" guarantee as the Windows/Linux
 `update.ps1`/`update.sh` scripts in the main [installation guide](installation.md#staying-updated) —
 `git pull` stops and tells you if you've edited a tracked file yourself.
+(The `git pull` here only matters for keeping `docker-compose.yml`/docs in
+your own checkout current — the running containers come from the pulled
+images, not this checkout's source.)
+
+**Or automatically**, with the `watchtower` service already defined in
+`docker/docker-compose.yml`: it polls GHCR every 6 hours (matching the
+bot's own update-check cadence) and recreates a container in place the
+moment a newer image is published, for both `police-chief-bot` and
+`police-chief-webapp` (each opted in via a
+`com.centurylinklabs.watchtower.enable` label). This is what the web
+dashboard's System Health page means when it says a Docker deployment
+"can't update itself" without one of these — Watchtower is that piece,
+running as its own container specifically because giving it the access
+this requires (the host's Docker socket, effectively root on the VPS)
+is meaningfully safer confined to one small, single-purpose, well-known
+image than granted to the webapp directly. Nothing to configure — it
+starts along with everything else in step 9. Delete the `watchtower`
+service from `docker-compose.yml` if you'd rather not accept that
+tradeoff; both other containers work the same either way, you'd just be
+back to the manual commands above.
 
 ### Migrating an existing install's data to this VPS
 

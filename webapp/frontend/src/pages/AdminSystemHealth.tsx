@@ -168,7 +168,9 @@ export default function AdminSystemHealth() {
                   <div className="space-y-1 text-xs text-slate-500">
                     <p>
                       Docker deployment -- a container can't rebuild its own image, so this has
-                      to happen on the host:
+                      to happen on the host (unless you've set up the optional{" "}
+                      <span className="font-mono text-slate-300">watchtower</span> service in
+                      docker-compose.yml, which does this automatically within a few hours):
                     </p>
                     <p className="rounded bg-slate-950 px-2 py-1 font-mono text-slate-300">
                       git pull && docker compose pull && docker compose up -d

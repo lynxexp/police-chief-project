@@ -7,9 +7,15 @@ services:
     # flips that, and `pull` will fail with "unauthorized" until then.
     # Prefer building locally instead: docker build -t police-chief-bot:latest
     # -f docker/Dockerfile . -- then change image: above to
-    # police-chief-bot:latest.
+    # police-chief-bot:latest (and drop the watchtower label below, since
+    # watchtower can only see newer versions of a *pulled* image).
     image: ghcr.io/lynxexp/bot:latest
     container_name: police-chief-bot
+    labels:
+      # Opt-in, not watchtower's default "watch everything" -- caddy and
+      # watchtower itself are untouched. See the watchtower service's own
+      # comment for what this buys you and the tradeoff it requires.
+      - com.centurylinklabs.watchtower.enable=true
     volumes:
       - /opt/docker/police-chief-bot/db/:/app/db
     restart: unless-stopped
@@ -17,11 +23,18 @@ services:
       - DISCORD_BOT_TOKEN=<your bot token here>
 
   police-chief-webapp:
-    # No published registry image yet either - build locally:
-    # docker build -t police-chief-webapp:latest -f webapp/Dockerfile .
-    # (build from the repo root, not from webapp/ -- see webapp/Dockerfile)
-    image: police-chief-webapp:latest
+    # Published by .github/workflows/docker-webapp.yml on every release --
+    # same deal as the bot image above, including needing the ghcr.io/
+    # lynxexp/webapp package set to Public separately (it's a different
+    # package). Prefer building locally instead: docker build -t
+    # police-chief-webapp:latest -f webapp/Dockerfile . (build from the
+    # repo root, not from webapp/ -- see webapp/Dockerfile) -- then change
+    # image: below to police-chief-webapp:latest and drop the watchtower
+    # label, same reasoning as the bot service.
+    image: ghcr.io/lynxexp/webapp:latest
     container_name: police-chief-webapp
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     volumes:
       # Same bind mount as police-chief-bot, read+write -- this shared
       # path is the entire cross-process bridge between the two services;
@@ -44,3 +57,38 @@ services:
       # exact steps to flip this over once a reverse proxy (Caddy) is
       # actually in front of this service.
       - "127.0.0.1:3000:3000"
+
+  # Optional: self-updating bot/webapp containers. Watchtower polls GHCR
+  # for newer digests of the two labeled images above and recreates their
+  # containers in place when one shows up -- the actual mechanism behind
+  # the web dashboard's "why can't Docker just update itself" answer.
+  #
+  # This needs the host's Docker socket to do that (it has to ask Docker
+  # itself to pull and recreate containers, which nothing inside a
+  # container can do to itself) -- and that socket is effectively root on
+  # this host: anything with access to it can start privileged containers
+  # or mount arbitrary host paths. Confining it to this single,
+  # single-purpose, well-established image (rather than giving the
+  # socket to police-chief-webapp directly) keeps that exposure isolated
+  # to a container that does nothing else.
+  #
+  # Delete this service entirely if you'd rather not accept that
+  # tradeoff -- both containers keep working fine without it, you'll
+  # just be back to updating manually (git pull && docker compose pull
+  # && docker compose up -d).
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: police-chief-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Only touches containers carrying the label above -- caddy and
+      # watchtower itself are never in scope.
+      - WATCHTOWER_LABEL_ENABLE=true
+      # Matches the bot's own GitHub release-check cadence (6h) so both
+      # "is there an update" signals move in step.
+      - WATCHTOWER_POLL_INTERVAL=21600
+      # Remove the old image after a successful update instead of letting
+      # every past version pile up on disk indefinitely.
+      - WATCHTOWER_CLEANUP=true

@@ -203,11 +203,16 @@ itself is one step:
 - **Option A (Linux/Mac):** run `./update.sh` — same thing, and it restarts
   via `systemctl` automatically if you've set up
   `police-chief-bot.service`.
-- **Option B (Docker):** `git pull && docker compose up -d --build`. This
-  fork doesn't publish a registry image yet (see the comment in
-  `docker-compose.yml`), so this rebuilds locally rather than pulling a
-  prebuilt image — slower than a plain `pull` but the correct command for
-  the current setup.
+- **Option B (Docker):** `git pull && docker compose pull && docker compose up -d`
+  — both the bot and (if you're running it) the web dashboard publish real
+  images to GHCR now (see the comments in `docker-compose.yml`), so this
+  pulls prebuilt images rather than rebuilding locally. Each image's GHCR
+  package needs to be set to Public once (Package settings → Danger Zone →
+  Change visibility) before `pull` works — it's private by default, and
+  fails with "unauthorized" until then. If you'd rather not depend on the
+  registry, `docker compose up -d --build` still rebuilds locally instead.
+  See [webapp-deployment.md](webapp-deployment.md#deploying-to-a-vps) for
+  Watchtower, which automates this `pull && up -d` step entirely.
 
 Neither script ever discards local changes — if you've edited tracked
 files yourself, `git pull` will say so and stop, same as it would running
