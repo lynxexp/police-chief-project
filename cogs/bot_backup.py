@@ -820,6 +820,24 @@ class _RestoreConfirmView(discord.ui.View):
                     os.path.join(self.stage_dir, name),
                     os.path.join("db", name),
                 )
+                # A backup is a clean, checkpointed snapshot with no WAL of
+                # its own, but the *replaced* file's old -wal/-shm sidecars
+                # (from whatever the bot had open before this restore) are
+                # left behind on disk -- they describe writes against a
+                # database that no longer exists at this path. Opening the
+                # new file next to a stale WAL referencing a different
+                # database generation is exactly what "database disk image
+                # is malformed" looks like; SQLite recreates fresh, empty
+                # sidecars the next time it opens the file in WAL mode, so
+                # deleting these is always safe. (A live write landing in
+                # the instant between this move and the restart just below
+                # could theoretically recreate one more -wal against the
+                # now-unlinked old file, but that vanishes with the process
+                # that wrote it and never gets opened again.)
+                for suffix in ("-wal", "-shm"):
+                    stale = os.path.join("db", name + suffix)
+                    if os.path.exists(stale):
+                        os.remove(stale)
         except Exception as e:
             logger.error(f"Restore write failed: {e}")
             await interaction.edit_original_response(
