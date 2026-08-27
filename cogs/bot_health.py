@@ -22,7 +22,6 @@ import re
 from .permission_handler import PermissionManager
 from .pimp_my_bot import theme, safe_edit_message
 from .bot_restart import is_container, restart_process
-from .browser_headers import get_headers
 
 
 # Health status constants
@@ -127,21 +126,12 @@ class BotHealth(commands.Cog):
         self.log_path = "log"
         self.archive_path = "log/archive"
         self.settings_db_path = "db/settings.sqlite"
-        self.gift_api_url = None
-        self.gift_api_key = None
 
         self.logger = logging.getLogger('bot')
         self.start_time = datetime.now(timezone.utc)
         # Cached bot directory size in MB; refreshed every 15 minutes by
         # update_bot_footprint_loop so dashboard renders stay instant.
         self._bot_footprint_mb: float | None = None
-        # Cached API status. Refreshed hourly by api_status_loop and lazily in
-        # the background when the dashboard is opened. Renders always serve the
-        # cache, so they never wait on a live HTTP call (Discord's 3 s limit).
-        self._cached_wos_api: dict | None = None
-        self._cached_gift_api: dict | None = None
-        self._api_cache_at: datetime | None = None
-        self._api_refresh_task: asyncio.Task | None = None
 
         self.heartbeat_path = "heartbeat.txt"
         self.version_path = "version"
@@ -153,7 +143,6 @@ class BotHealth(commands.Cog):
         self._setup_database()
         self.maintenance_loop.start()
         self.update_bot_footprint_loop.start()
-        self.api_status_loop.start()
         self.heartbeat_loop.start()
         self.update_check_loop.start()
         self.command_poll_loop.start()
@@ -333,94 +322,6 @@ class BotHealth(commands.Cog):
         cursor.execute(f"UPDATE health_config SET {set_clauses} WHERE id = 1", values)
         conn.commit()
         conn.close()
-
-    API_CACHE_STALE_SECONDS = 300  # opening the dashboard kicks a background refresh once the cache is older than this
-
-    async def check_wos_api_status(self) -> dict:
-        """Cached Gift Redemption API status. Serves the cache and never blocks a
-        render on live HTTP; a stale cache triggers a background refresh instead.
-        Only the very first call (before the hourly loop has populated the cache)
-        probes inline."""
-        self._maybe_lazy_refresh()
-        if self._cached_wos_api is not None:
-            return self._cached_wos_api
-        result = await self._probe_wos_api()
-        self._cached_wos_api = result
-        self._api_cache_at = datetime.now(timezone.utc)
-        return result
-
-    async def _probe_wos_api(self) -> dict:
-        """Police Chief has no per-player redemption API, so there's
-        nothing to probe - this always reports not-applicable."""
-        return {'status': STATUS_WARNING, 'message': 'Not applicable (Police Chief has no redemption API)'}
-
-    async def check_gift_distribution_api(self) -> dict:
-        """Cached Gift Distribution API status. See check_wos_api_status."""
-        self._maybe_lazy_refresh()
-        if self._cached_gift_api is not None:
-            return self._cached_gift_api
-        result = await self._probe_gift_distribution_api()
-        self._cached_gift_api = result
-        self._api_cache_at = datetime.now(timezone.utc)
-        return result
-
-    def _maybe_lazy_refresh(self) -> None:
-        """Kick a background probe of both APIs when the cache is missing or
-        older than API_CACHE_STALE_SECONDS. Never blocks the caller, and never
-        runs two refreshes at once."""
-        if self._api_cache_at is not None:
-            age = (datetime.now(timezone.utc) - self._api_cache_at).total_seconds()
-            if age < self.API_CACHE_STALE_SECONDS:
-                return
-        if self._api_refresh_task and not self._api_refresh_task.done():
-            return
-        self._api_refresh_task = asyncio.create_task(self._refresh_api_cache())
-
-    async def _refresh_api_cache(self) -> None:
-        """Probe both APIs once and store the results in the cache."""
-        try:
-            wos_result, gift_result = await asyncio.gather(
-                self._probe_wos_api(), self._probe_gift_distribution_api(),
-                return_exceptions=True,
-            )
-            if isinstance(wos_result, dict):
-                self._cached_wos_api = wos_result
-            if isinstance(gift_result, dict):
-                self._cached_gift_api = gift_result
-            self._api_cache_at = datetime.now(timezone.utc)
-        except Exception as e:
-            self.logger.warning(f"API status refresh failed: {e}")
-
-    async def _probe_gift_distribution_api(self) -> dict:
-        """Actual live probe — only called by the cached wrapper or the
-        background refresh loop."""
-        if not self.gift_api_url:
-            return {'status': STATUS_WARNING, 'message': 'Not configured (community feed removed)'}
-        try:
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                start = datetime.now()
-                headers = get_headers()
-                headers['X-API-Key'] = self.gift_api_key
-                async with session.get(self.gift_api_url, headers=headers) as response:
-                    elapsed = (datetime.now() - start).total_seconds()
-
-                    if response.status == 200:
-                        if elapsed > 3:
-                            return {'status': STATUS_WARNING, 'message': f'Online (slow: {elapsed:.1f}s)'}
-                        return {'status': STATUS_HEALTHY, 'message': 'Online'}
-                    # 429/1015/5xx = reachable but throttled, not a hard error.
-                    elif response.status in (429, 1015, 502, 503, 504):
-                        return {'status': STATUS_WARNING, 'message': f'Reachable, rate-limited (HTTP {response.status})'}
-                    else:
-                        return {'status': STATUS_ERROR, 'message': f'Error (HTTP {response.status})'}
-        except asyncio.TimeoutError:
-            return {'status': STATUS_ERROR, 'message': 'Timeout (>5s)'}
-        except aiohttp.ClientError:
-            return {'status': STATUS_ERROR, 'message': 'Connection failed'}
-        except Exception as e:
-            self.logger.error(f"Error checking Gift API status: {e}")
-            return {'status': STATUS_ERROR, 'message': 'Check failed'}
 
     def get_database_health(self) -> dict:
         """Get database health status"""
@@ -898,7 +799,6 @@ class BotHealth(commands.Cog):
             }
 
     def get_overall_status(self, db_health: dict, log_health: dict, system_health: dict,
-                           wos_api: dict | None = None, gift_api: dict | None = None,
                            requirements: dict | None = None) -> str:
         """Determine overall health status"""
         statuses = [
@@ -907,10 +807,6 @@ class BotHealth(commands.Cog):
             self.get_disk_health()['status'],
         ]
 
-        if wos_api:
-            statuses.append(wos_api['status'])
-        if gift_api:
-            statuses.append(gift_api['status'])
         if requirements:
             statuses.append(requirements['status'])
 
@@ -1303,17 +1199,6 @@ class BotHealth(commands.Cog):
     async def before_maintenance_loop(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(hours=1)
-    async def api_status_loop(self):
-        """Refresh the cached API status once an hour so the dashboard has a
-        warm value to show without a live probe. Runs once on startup, then
-        hourly; opening the dashboard also refreshes lazily in between."""
-        await self._refresh_api_cache()
-
-    @api_status_loop.before_loop
-    async def before_api_status_loop(self):
-        await self.bot.wait_until_ready()
-
     @tasks.loop(minutes=15)
     async def update_bot_footprint_loop(self):
         """Recompute the bot's directory size in a background thread so the Health
@@ -1539,14 +1424,12 @@ class BotHealth(commands.Cog):
         """Same data _build_health_embed() renders for Discord, as a plain
         dict -- the single source of truth both surfaces read from."""
         from . import onnx_lifecycle
-        wos_api = await self.check_wos_api_status()
-        gift_api = await self.check_gift_distribution_api()
         db_health = self.get_database_health()
         log_health = self.get_log_health()
         system_health = self.get_system_health()
         requirements = self.get_requirements_health()
         disk_health = self.get_disk_health()
-        overall = self.get_overall_status(db_health, log_health, system_health, wos_api, gift_api, requirements)
+        overall = self.get_overall_status(db_health, log_health, system_health, requirements)
         ocr_status, ocr_summary = self._build_ocr_summary(onnx_lifecycle.get_status_lines())
         pq = self.bot.get_cog("ProcessQueue")
         queue = pq.queue_counts() if pq else None
@@ -1554,8 +1437,6 @@ class BotHealth(commands.Cog):
 
         return {
             'overall': overall,
-            'wosApi': wos_api,
-            'giftApi': gift_api,
             'ocr': {'status': ocr_status, 'summary': ocr_summary},
             'system': system_health,
             'disk': disk_health,
@@ -1617,8 +1498,6 @@ class BotHealth(commands.Cog):
         self.maintenance_loop.cancel()
         if self.update_bot_footprint_loop.is_running():
             self.update_bot_footprint_loop.cancel()
-        if self.api_status_loop.is_running():
-            self.api_status_loop.cancel()
         if self.heartbeat_loop.is_running():
             self.heartbeat_loop.cancel()
         if self.update_check_loop.is_running():
@@ -1627,8 +1506,6 @@ class BotHealth(commands.Cog):
             self.command_poll_loop.cancel()
         if self.status_snapshot_loop.is_running():
             self.status_snapshot_loop.cancel()
-        if self._api_refresh_task and not self._api_refresh_task.done():
-            self._api_refresh_task.cancel()
         self.logger.info("[HEALTH] Bot Health cog unloaded")
 
     def get_loaded_cogs(self) -> list:
@@ -1820,17 +1697,14 @@ class BotHealth(commands.Cog):
             # Show loading state
             await interaction.response.defer()
 
-            # Gather health data (API checks are async)
-            wos_api = await self.check_wos_api_status()
-            gift_api = await self.check_gift_distribution_api()
             db_health = self.get_database_health()
             log_health = self.get_log_health()
             system_health = self.get_system_health()
             requirements = self.get_requirements_health()
 
-            overall = self.get_overall_status(db_health, log_health, system_health, wos_api, gift_api, requirements)
+            overall = self.get_overall_status(db_health, log_health, system_health, requirements)
 
-            embed = self._build_health_embed(overall, wos_api, gift_api, db_health, log_health, system_health, requirements)
+            embed = self._build_health_embed(overall, db_health, log_health, system_health, requirements)
             view = HealthMenuView(self)
 
             await interaction.followup.edit_message(
@@ -1850,7 +1724,7 @@ class BotHealth(commands.Cog):
             except Exception:
                 pass
 
-    def _build_health_embed(self, overall: str, wos_api: dict, gift_api: dict,
+    def _build_health_embed(self, overall: str,
                             db_health: dict, log_health: dict, system_health: dict,
                             requirements: dict | None = None) -> discord.Embed:
         """Build the health dashboard embed."""
@@ -1911,8 +1785,6 @@ class BotHealth(commands.Cog):
             name="Health",
             value=(
                 f"{status_prefix(overall)}**Overall:** {overall_text}\n"
-                f"{theme.ticketIcon} {status_prefix(wos_api['status'])}**Redemption API:** {wos_api['message']}\n"
-                f"{theme.giftIcon} {status_prefix(gift_api['status'])}**Distribution API:** {gift_api['message']}\n"
                 f"{theme.globeIcon} {status_prefix(ocr_status)}**OCR Engines:** {ocr_summary}"
             ),
             inline=True,
@@ -2223,17 +2095,15 @@ class HealthMenuView(discord.ui.View):
             )
             return
 
-        wos_api = await self.cog.check_wos_api_status()
-        gift_api = await self.cog.check_gift_distribution_api()
         db_health = self.cog.get_database_health()
         log_health = self.cog.get_log_health()
         system_health = self.cog.get_system_health()
         requirements = self.cog.get_requirements_health()
         overall = self.cog.get_overall_status(
-            db_health, log_health, system_health, wos_api, gift_api, requirements
+            db_health, log_health, system_health, requirements
         )
         embed = self.cog._build_health_embed(
-            overall, wos_api, gift_api, db_health, log_health, system_health, requirements
+            overall, db_health, log_health, system_health, requirements
         )
         embed.add_field(
             name=f"{theme.verifiedIcon} Cleanup Complete",
@@ -2291,32 +2161,28 @@ class HealthMenuView(discord.ui.View):
         self._force_restart = False
         self._build_components()
         # Re-fetch and re-render the dashboard
-        wos_api = await self.cog.check_wos_api_status()
-        gift_api = await self.cog.check_gift_distribution_api()
         db_health = self.cog.get_database_health()
         log_health = self.cog.get_log_health()
         system_health = self.cog.get_system_health()
         requirements = self.cog.get_requirements_health()
         overall = self.cog.get_overall_status(
-            db_health, log_health, system_health, wos_api, gift_api, requirements
+            db_health, log_health, system_health, requirements
         )
         embed = self.cog._build_health_embed(
-            overall, wos_api, gift_api, db_health, log_health, system_health, requirements
+            overall, db_health, log_health, system_health, requirements
         )
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def _dashboard_embed(self) -> discord.Embed:
-        wos_api = await self.cog.check_wos_api_status()
-        gift_api = await self.cog.check_gift_distribution_api()
         db_health = self.cog.get_database_health()
         log_health = self.cog.get_log_health()
         system_health = self.cog.get_system_health()
         requirements = self.cog.get_requirements_health()
         overall = self.cog.get_overall_status(
-            db_health, log_health, system_health, wos_api, gift_api, requirements
+            db_health, log_health, system_health, requirements
         )
         return self.cog._build_health_embed(
-            overall, wos_api, gift_api, db_health, log_health, system_health, requirements
+            overall, db_health, log_health, system_health, requirements
         )
 
     def _build_clear_confirm_embed(self, counts: dict) -> discord.Embed:
@@ -2463,14 +2329,12 @@ class CleanCogsConfirmView(discord.ui.View):
         # Return to health dashboard
         await interaction.response.defer()
 
-        wos_api = await self.cog.check_wos_api_status()
-        gift_api = await self.cog.check_gift_distribution_api()
         db_health = self.cog.get_database_health()
         log_health = self.cog.get_log_health()
         system_health = self.cog.get_system_health()
 
-        overall = self.cog.get_overall_status(db_health, log_health, system_health, wos_api, gift_api)
-        embed = self.cog._build_health_embed(overall, wos_api, gift_api, db_health, log_health, system_health)
+        overall = self.cog.get_overall_status(db_health, log_health, system_health)
+        embed = self.cog._build_health_embed(overall, db_health, log_health, system_health)
 
         await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed, view=self.parent_view)
 
@@ -2610,14 +2474,12 @@ class ReloadCogsView(discord.ui.View):
     async def _on_cancel(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        wos_api = await self.cog.check_wos_api_status()
-        gift_api = await self.cog.check_gift_distribution_api()
         db_health = self.cog.get_database_health()
         log_health = self.cog.get_log_health()
         system_health = self.cog.get_system_health()
 
-        overall = self.cog.get_overall_status(db_health, log_health, system_health, wos_api, gift_api)
-        embed = self.cog._build_health_embed(overall, wos_api, gift_api, db_health, log_health, system_health)
+        overall = self.cog.get_overall_status(db_health, log_health, system_health)
+        embed = self.cog._build_health_embed(overall, db_health, log_health, system_health)
 
         await interaction.followup.edit_message(
             message_id=interaction.message.id,

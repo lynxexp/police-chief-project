@@ -176,8 +176,6 @@ export default function AdminSystemHealth() {
               <SectionHeading>Health</SectionHeading>
               <div className="space-y-2">
                 <CheckRow label="Overall" check={{ status: snapshot.overall }} />
-                <CheckRow label="Redemption API" check={snapshot.wosApi} />
-                <CheckRow label="Distribution API" check={snapshot.giftApi} />
                 <CheckRow label="OCR engines" check={{ status: snapshot.ocr.status, message: snapshot.ocr.summary }} />
               </div>
             </Card>

@@ -729,8 +729,6 @@ export interface StatusCheck {
 
 export interface SystemSnapshot {
   overall: "healthy" | "warning" | "error";
-  wosApi: StatusCheck;
-  giftApi: StatusCheck;
   ocr: { status: string; summary: string };
   system: {
     uptime: string;

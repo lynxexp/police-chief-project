@@ -235,7 +235,7 @@ so it's built with several layers of safety:
 
 `Admin → System Health` (**Owner tier only**). The web equivalent of the
 Discord bot's `/health` dashboard — the bot itself computes every check
-(API status, database/log/disk health, dependency versions) and this page
+(OCR engines, database/log/disk health, dependency versions) and this page
 just displays it, refreshing automatically every 15 seconds. If it ever
 says "the Discord bot needs to have started at least once," that's literal
 — this page has nothing to show until the bot has run and computed a status

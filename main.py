@@ -1050,25 +1050,12 @@ if __name__ == "__main__":
             # API health checks
             try:
                 import aiohttp as _aio
-                # trust_env so HTTPS_PROXY is honored, matching the redemption path.
+                # trust_env so HTTPS_PROXY is honored by the OCR check below.
+                # Police Chief has no redemption/distribution API of its own
+                # to probe here -- those aren't features this bot has.
                 timeout = _aio.ClientTimeout(total=5)
-                # No third-party gift-code distribution feed to probe here.
 
-                try:
-                    startup.phase_start("Checking Gift Code Redemption API")
-                    health = bot.get_cog("BotHealth")
-                    if health is not None:
-                        result = await health.check_wos_api_status()
-                        ok = result.get("status") in ("healthy", "warning")
-                        detail = result.get("message")   # "Online" is implied by "Connected to"
-                        startup.api_status("Gift Code Redemption API", "ok" if ok else "error",
-                                           None if detail == "Online" else detail)
-                    else:
-                        startup.api_status("Gift Code Redemption API", "error", "Health cog not loaded")
-                except Exception:
-                    startup.api_status("Gift Code Redemption API", "error", "Check failed")
-
-                # OCR status last, after both API checks, for a clean order.
+                # OCR status.
                 try:
                     from cogs.vault_track import remote_ocr_url, OCR_REMOTE_TOKEN
                     ocr_url = remote_ocr_url()
