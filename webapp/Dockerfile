@@ -17,7 +17,13 @@ RUN npm run build
 FROM node:20-slim AS backend-builder
 WORKDIR /app/webapp/backend
 COPY webapp/backend/package*.json ./
-RUN npm ci
+# --ignore-scripts: this stage only runs `tsc` to produce dist/ -- it never
+# executes the app, so better-sqlite3's compiled native binding (which
+# needs a C++ toolchain this slim stage doesn't have) is irrelevant here.
+# tsc only needs @types/better-sqlite3's type declarations, which install
+# fine without running the native build. The runtime stage below installs
+# the toolchain and does a real, executable install separately.
+RUN npm ci --ignore-scripts
 COPY webapp/backend/ ./
 RUN npm run build
 
