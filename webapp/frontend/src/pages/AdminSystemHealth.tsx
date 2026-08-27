@@ -11,6 +11,17 @@ import {
 } from "../api/client";
 import { Badge, Card, ErrorState, LoadingState, SectionHeading, buttonDanger, buttonPrimary, buttonSecondary } from "../components/ui";
 
+// GitHub release tags are always "v0.1.2"; the running version (read
+// straight from the `version` file) never has the "v" -- comparing them
+// raw made an up-to-date install show "Update available" for its own
+// version. Strip the prefix on both sides before comparing, same as the
+// bot's own _run_update_check() already does for its DM-notification
+// decision (cogs/bot_health.py) -- this just brings the web badge in
+// line with that, rather than redoing the comparison differently here.
+function isUpdateAvailable(version: string, latestTag: string): boolean {
+  return latestTag.replace(/^v/i, "") !== version.replace(/^v/i, "");
+}
+
 function statusBadge(status: string) {
   if (status === "healthy") return <Badge variant="success">Healthy</Badge>;
   if (status === "warning") return <Badge variant="warning">Warning</Badge>;
@@ -138,7 +149,7 @@ export default function AdminSystemHealth() {
               <span className="text-slate-300">
                 Running <span className="font-mono">{snapshot.version}</span>
               </span>
-              {snapshot.latestRelease && snapshot.latestRelease.tag_name !== snapshot.version ? (
+              {snapshot.latestRelease && isUpdateAvailable(snapshot.version, snapshot.latestRelease.tag_name) ? (
                 <>
                   <Badge variant="info">Update available: {snapshot.latestRelease.tag_name}</Badge>
                   <a
@@ -162,7 +173,7 @@ export default function AdminSystemHealth() {
               </button>
             </div>
 
-            {snapshot.latestRelease && snapshot.latestRelease.tag_name !== snapshot.version && (
+            {snapshot.latestRelease && isUpdateAvailable(snapshot.version, snapshot.latestRelease.tag_name) && (
               <div className="mt-3 space-y-2">
                 {snapshot.isContainer ? (
                   <div className="space-y-1 text-xs text-slate-500">
