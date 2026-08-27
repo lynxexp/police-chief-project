@@ -17,14 +17,34 @@ you can start local and move to Docker later without losing data — see
      in with a clear error telling you to enable it.
    - **Message Content Intent** — required to read messages in Vault Trap /
      Capitol War tracking channels and ID-lookup channels.
-3. **Invite the bot to your server** with the `applications.commands` and
-   `bot` scopes, and grant it **Administrator** permission. The bot checks
-   for Administrator on every `/settings` use and won't proceed without it —
-   this is a hard requirement, not just a recommendation, since the bot
-   manages roles, channels, and messages across many parts of your server.
+3. **Invite the bot to your server.** This is the one step that actually
+   decides which server the bot ends up in — nothing later in this guide
+   does, so it's worth walking through in full:
+   1. In your application, go to **OAuth2 → URL Generator** (left sidebar).
+   2. Under **Scopes**, check `bot` and `applications.commands`.
+   3. Under **Bot Permissions** (a new section appears once `bot` is
+      checked), check **Administrator**. The bot checks for Administrator
+      on every `/settings` use and won't proceed without it — this is a
+      hard requirement, not just a recommendation, since it manages roles,
+      channels, and messages across many parts of your server.
+   4. Copy the **Generated URL** at the bottom of the page and open it in a
+      browser where you're logged into Discord.
+   5. Discord shows a dropdown of every server where *you* have Manage
+      Server permission. **You choose the server here** — this is the
+      entire "which server" decision, made by you in Discord's own UI, not
+      by anything the bot's code does. Pick your alliance's server and
+      click **Authorize**.
+
+   The bot's account is now a member of that server, independent of
+   whether you've even downloaded the code yet. To add it to a second
+   server later (or move it to a different one), reuse this exact same
+   URL and go through the picker again — there's no separate "join
+   another server" mechanism, it's this flow every time.
 4. **Copy the bot token** from the Bot page (click "Reset Token" if you
    haven't generated one yet). Keep this secret — anyone with it can control
-   your bot.
+   your bot. You'll use this token in the next section, to actually log the
+   bot process in — inviting it here only put its account in your server;
+   it can't come online until it authenticates with this token.
 
 ## Option A: Run directly with Python
 
@@ -34,8 +54,16 @@ you can start local and move to Docker later without losing data — see
    git clone https://github.com/lynxexp/police-chief-project.git
    cd police-chief-project
    ```
-3. Create a file named `bot_token.txt` in the repo root containing just your
-   bot token (no quotes, no extra whitespace).
+3. Create a file named `bot_token.txt` in the repo root containing just the
+   bot token you copied in **Before you start**, step 4 (no quotes, no
+   extra whitespace). This is what actually logs the bot process into
+   Discord — inviting it to your server earlier only added its account as
+   a member; without a valid token here, it can't come online at all, and
+   fails immediately with an "Invalid bot token" error.
+
+   If you skip this step, `python main.py` just asks you for the token
+   interactively on first run instead, and writes it to `bot_token.txt`
+   itself so you're not asked again.
 4. Run it:
    ```bash
    python main.py
@@ -126,7 +154,8 @@ Better suited to a VPS or home server you want running unattended. A
    ```bash
    docker build -t police-chief-bot:latest -f docker/Dockerfile .
    ```
-3. Set your bot token as an environment variable and start it:
+3. Set your bot token (the one from **Before you start**, step 4) as an
+   environment variable and start it:
    ```bash
    export DISCORD_BOT_TOKEN=your_token_here
    docker compose -f docker/docker-compose.yml up -d
