@@ -20,6 +20,21 @@ import { sql } from "kysely";
 import { usersDb, vaultDataDb, capitolWarDb, allianceDb, changesDb } from "../db/connections.js";
 import { resolveAuthContext, canViewAlliance } from "../auth/context.js";
 
+// power_changes / combat_power_changes are lazily created (see
+// connections.ts's EXPECTED optional flag) -- the bot only ever
+// CREATE TABLE IF NOT EXISTS's them on the first change it actually
+// records, so a fresh install or an alliance that's never had one yet
+// legitimately doesn't have the table. Treat that as "no history",
+// not an error; anything else still surfaces normally.
+async function selectOrEmpty<T>(promise: Promise<T[]>): Promise<T[]> {
+  try {
+    return await promise;
+  } catch (e) {
+    if (e instanceof Error && /no such table/i.test(e.message)) return [];
+    throw e;
+  }
+}
+
 const allianceIdParam = {
   type: "object",
   required: ["allianceId"],
@@ -217,18 +232,22 @@ export default async function memberRoutes(fastify: FastifyInstance): Promise<vo
           .where("fid", "=", fid)
           .orderBy("change_date", "desc")
           .execute(),
-        changesDb
-          .selectFrom("power_changes")
-          .select(["old_power", "new_power", "change_date"])
-          .where("fid", "=", fid)
-          .orderBy("change_date", "desc")
-          .execute(),
-        changesDb
-          .selectFrom("combat_power_changes")
-          .select(["old_combat_power", "new_combat_power", "change_date"])
-          .where("fid", "=", fid)
-          .orderBy("change_date", "desc")
-          .execute(),
+        selectOrEmpty(
+          changesDb
+            .selectFrom("power_changes")
+            .select(["old_power", "new_power", "change_date"])
+            .where("fid", "=", fid)
+            .orderBy("change_date", "desc")
+            .execute(),
+        ),
+        selectOrEmpty(
+          changesDb
+            .selectFrom("combat_power_changes")
+            .select(["old_combat_power", "new_combat_power", "change_date"])
+            .where("fid", "=", fid)
+            .orderBy("change_date", "desc")
+            .execute(),
+        ),
       ]);
 
       return {

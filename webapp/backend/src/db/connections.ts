@@ -167,6 +167,14 @@ interface ExpectedTable {
   file: string;
   table: string;
   columns: string[];
+  // True for tables the bot only CREATE TABLE IF NOT EXISTS's lazily, on
+  // first real use of a specific feature (e.g. the first-ever power change
+  // recorded, or the first time self-registration is toggled) -- not
+  // unconditionally at cog load. A fresh install, or simply an alliance
+  // that's never touched that one feature, legitimately never has these
+  // tables, and that's not a version mismatch worth refusing to start
+  // over. Column checks below still run normally once the table exists.
+  optional?: boolean;
 }
 
 /** One entry per table this app actually queries -- not every column in
@@ -257,12 +265,14 @@ const EXPECTED: ExpectedTable[] = [
     file: "changes.sqlite",
     table: "power_changes",
     columns: ["id", "fid", "old_power", "new_power", "change_date"],
+    optional: true, // only created once the first power change is ever recorded
   },
   {
     db: changesRaw,
     file: "changes.sqlite",
     table: "combat_power_changes",
     columns: ["id", "fid", "old_combat_power", "new_combat_power", "change_date"],
+    optional: true, // only created once the first combat power change is ever recorded
   },
   {
     db: giftcodeRaw,
@@ -281,6 +291,7 @@ const EXPECTED: ExpectedTable[] = [
     file: "settings.sqlite",
     table: "register_settings",
     columns: ["enabled"],
+    optional: true, // only created once self-registration is toggled at least once
   },
   {
     db: idChannelRaw,
@@ -385,7 +396,9 @@ export function assertBotSchemaIntact(): void {
       .get(expected.table) as { name: string } | undefined;
 
     if (!row) {
-      problems.push(`${expected.file}: table "${expected.table}" does not exist`);
+      if (!expected.optional) {
+        problems.push(`${expected.file}: table "${expected.table}" does not exist`);
+      }
       continue;
     }
 
