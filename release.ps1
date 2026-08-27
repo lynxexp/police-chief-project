@@ -64,7 +64,7 @@ if ($Bump -and $Version) {
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw "GitHub CLI (gh) not found. Install it from https://cli.github.com/ first."
 }
-gh auth status *> $null
+gh auth status | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "gh is not authenticated. Run 'gh auth login' first."
 }
@@ -115,7 +115,13 @@ if (git tag -l $tag) {
 if ($Notes) {
     $releaseNotes = $Notes
 } else {
-    $lastTag = git describe --tags --abbrev=0 2>$null
+    # Not `git describe` -- it exits non-zero with no tags yet, and under
+    # $ErrorActionPreference = "Stop", redirecting a native command's
+    # stderr turns that into a terminating error even though "no tags
+    # yet" is an expected, handled case here, not a real failure.
+    $allTags = git tag -l "v*" | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
+        Sort-Object { [version]($_ -replace '^v', '') }
+    $lastTag = if ($allTags) { $allTags[-1] } else { $null }
     if ($lastTag) {
         $commits = git log --oneline "$lastTag..HEAD"
     } else {
