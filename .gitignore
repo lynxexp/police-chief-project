@@ -7,7 +7,6 @@ log
 heartbeat.txt
 logs_archive
 bot_token.txt
-version
 .python-version
 *venv*
 backups

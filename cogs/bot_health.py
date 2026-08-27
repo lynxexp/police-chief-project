@@ -29,6 +29,9 @@ STATUS_HEALTHY = "healthy"
 STATUS_WARNING = "warning"
 STATUS_ERROR = "error"
 
+# Where update checks look for new releases -- see update_check_loop().
+GITHUB_REPO = "lynxexp/police-chief-project"
+
 # Thresholds
 DB_SIZE_WARNING_MB = 100
 DB_SIZE_ERROR_MB = 500
@@ -140,12 +143,18 @@ class BotHealth(commands.Cog):
         self._api_refresh_task: asyncio.Task | None = None
 
         self.heartbeat_path = "heartbeat.txt"
+        self.version_path = "version"
+        # Cached latest-release info from GitHub, refreshed every 6 hours by
+        # update_check_loop -- the dashboard reads this instead of hitting
+        # the GitHub API on every render.
+        self._cached_latest_release: dict | None = None
 
         self._setup_database()
         self.maintenance_loop.start()
         self.update_bot_footprint_loop.start()
         self.api_status_loop.start()
         self.heartbeat_loop.start()
+        self.update_check_loop.start()
         self.logger.info("[HEALTH] Bot Health cog initialized")
 
     def _db(self, path: str, timeout: float = 30.0) -> sqlite3.Connection:
@@ -194,6 +203,12 @@ class BotHealth(commands.Cog):
         columns = [col[1] for col in cursor.fetchall()]
         if 'custom_helper_files' not in columns:
             cursor.execute("ALTER TABLE health_config ADD COLUMN custom_helper_files TEXT DEFAULT ''")
+        if 'update_check_enabled' not in columns:
+            cursor.execute("ALTER TABLE health_config ADD COLUMN update_check_enabled INTEGER DEFAULT 1")
+        if 'last_notified_version' not in columns:
+            # The release we last DM'd an admin about -- so a fresh release
+            # triggers exactly one notification, not one every check cycle.
+            cursor.execute("ALTER TABLE health_config ADD COLUMN last_notified_version TEXT")
 
         # Insert default row if table is empty
         cursor.execute("SELECT COUNT(*) FROM health_config")
@@ -235,7 +250,9 @@ class BotHealth(commands.Cog):
             'notify_user_id': None,
             'last_cleanup_date': None,
             'last_optimization_date': None,
-            'custom_helper_files': ''
+            'custom_helper_files': '',
+            'update_check_enabled': 1,
+            'last_notified_version': None,
         }
 
     def get_custom_helper_files(self) -> list:
@@ -1296,6 +1313,115 @@ class BotHealth(commands.Cog):
     async def before_heartbeat_loop(self):
         await self.bot.wait_until_ready()
 
+    def _read_local_version(self) -> str:
+        """Same read main.py's startup banner does -- 'unknown' if the file
+        is missing (e.g. a source checkout with no version file at all)."""
+        if os.path.exists(self.version_path):
+            with open(self.version_path, "r") as f:
+                v = f.read().strip()
+                if v:
+                    return v
+        return "unknown"
+
+    async def _fetch_latest_release(self) -> dict | None:
+        """The newest published GitHub release, or None if there isn't one
+        yet, the API is unreachable, or the request fails -- every case is
+        treated as "nothing to report" rather than an error surfaced
+        anywhere, since this runs unattended and unprompted."""
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            headers = {"Accept": "application/vnd.github+json", "User-Agent": "police-chief-bot"}
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        # 404 means no release has ever been published -- not
+                        # worth a warning log, that's an expected state.
+                        if response.status != 404:
+                            self.logger.warning(f"Update check: GitHub API returned {response.status}")
+                        return None
+                    data = await response.json()
+                    return {
+                        "tag_name": data.get("tag_name") or "",
+                        "name": data.get("name") or "",
+                        "html_url": data.get("html_url") or "",
+                    }
+        except Exception as e:
+            self.logger.warning(f"Update check failed: {e}")
+            return None
+
+    @tasks.loop(hours=6)
+    async def update_check_loop(self):
+        """Checks GitHub for a newer release than the one this install is
+        running, once at startup and every 6 hours after. DMs the Global
+        Admin exactly once per new version (tracked via last_notified_version
+        so a restart, or six more hours passing, doesn't repeat the DM for
+        a release they've already been told about)."""
+        config = self.get_config()
+        if not config.get('update_check_enabled', 1):
+            return
+
+        release = await self._fetch_latest_release()
+        if not release or not release['tag_name']:
+            return
+        self._cached_latest_release = release
+
+        local_version = self._read_local_version()
+        try:
+            is_newer = parse_version(release['tag_name'].lstrip('vV')) > parse_version(local_version.lstrip('vV'))
+        except Exception:
+            # An unparseable version string (local or remote) should never
+            # crash the loop -- just skip the comparison this cycle.
+            return
+        if not is_newer:
+            return
+        if config.get('last_notified_version') == release['tag_name']:
+            return
+
+        self.update_config(last_notified_version=release['tag_name'])
+        await self._notify_update_available(local_version, release)
+
+    @update_check_loop.before_loop
+    async def before_update_check_loop(self):
+        await self.bot.wait_until_ready()
+
+    async def _notify_update_available(self, local_version: str, release: dict):
+        try:
+            with sqlite3.connect(self.settings_db_path) as db:
+                admins = db.cursor().execute(
+                    "SELECT id FROM admin WHERE is_initial = 1"
+                ).fetchall()
+            if not admins:
+                self.logger.warning(f"Update {release['tag_name']} available but no global admin to notify")
+                return
+
+            release_name = f"**{release['name']}**\n" if release.get('name') else ""
+            embed = discord.Embed(
+                title=f"{theme.refreshIcon} Update Available",
+                description=(
+                    f"You're running **{local_version}**. **{release['tag_name']}** "
+                    f"is now available.\n\n"
+                    f"{release_name}"
+                    f"[View release notes]({release['html_url']})\n\n"
+                    f"**To update:**\n"
+                    f"- Windows: run `update.ps1` from the bot's folder\n"
+                    f"- Linux/Mac: run `./update.sh` from the bot's folder\n"
+                    f"- Docker: `git pull && docker compose up -d --build`\n\n"
+                    f"*Turn these checks off in the Bot Health menu's Settings if you'd "
+                    f"rather update on your own schedule.*"
+                ),
+                color=theme.emColor1,
+            )
+            for (admin_id,) in admins:
+                try:
+                    user = await self.bot.fetch_user(admin_id)
+                    if user:
+                        await user.send(embed=embed)
+                except Exception:
+                    pass
+        except Exception as e:
+            self.logger.error(f"Update-available DM failed: {e}")
+
     @staticmethod
     def _compute_bot_footprint_mb() -> float:
         """Total on-disk size of the bot dir (in a thread). Includes the venv and
@@ -1328,6 +1454,8 @@ class BotHealth(commands.Cog):
             self.api_status_loop.cancel()
         if self.heartbeat_loop.is_running():
             self.heartbeat_loop.cancel()
+        if self.update_check_loop.is_running():
+            self.update_check_loop.cancel()
         if self._api_refresh_task and not self._api_refresh_task.done():
             self._api_refresh_task.cancel()
         self.logger.info("[HEALTH] Bot Health cog unloaded")
@@ -1619,11 +1747,22 @@ class BotHealth(commands.Cog):
             inline=True,
         )
 
+        local_version = self._read_local_version()
+        version_line = f"{theme.refreshIcon} **Version:** {local_version}"
+        latest = self._cached_latest_release
+        if latest and latest.get('tag_name'):
+            try:
+                if parse_version(latest['tag_name'].lstrip('vV')) > parse_version(local_version.lstrip('vV')):
+                    version_line += f" ({latest['tag_name']} available)"
+            except Exception:
+                pass
+
         system_lines = [
             f"{theme.timeIcon} **Uptime:** {uptime}",
             f"{theme.boltIcon} {status_prefix(system_health['latency_status'])}**Latency:** {system_health['latency_ms']}ms",
             f"{theme.settingsIcon} **Cogs:** {system_health['loaded_cogs']}",
             f"{theme.infoIcon} **Python:** {system_health['python_version']} on {system_health['platform']}",
+            version_line,
         ]
         if system_health.get('memory_msg'):
             system_lines.append(
@@ -1792,6 +1931,16 @@ class HealthMenuView(discord.ui.View):
         settings_btn.callback = self._on_settings
         self.add_item(settings_btn)
 
+        update_checks_on = self.cog.get_config().get('update_check_enabled', 1)
+        update_toggle_btn = discord.ui.Button(
+            label=f"Update Checks: {'ON' if update_checks_on else 'OFF'}",
+            emoji=theme.refreshIcon,
+            style=discord.ButtonStyle.success if update_checks_on else discord.ButtonStyle.secondary,
+            row=1,
+        )
+        update_toggle_btn.callback = self._on_toggle_update_checks
+        self.add_item(update_toggle_btn)
+
         back_btn = discord.ui.Button(
             label="Back",
             emoji=theme.backIcon,
@@ -1927,6 +2076,14 @@ class HealthMenuView(discord.ui.View):
     async def _on_settings(self, interaction: discord.Interaction):
         config = self.cog.get_config()
         await interaction.response.send_modal(HealthSettingsModal(self.cog, config))
+
+    async def _on_toggle_update_checks(self, interaction: discord.Interaction):
+        config = self.cog.get_config()
+        new_value = 0 if config.get('update_check_enabled', 1) else 1
+        self.cog.update_config(update_check_enabled=new_value)
+        self._build_components()
+        embed = await self._dashboard_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def _on_reload_cogs(self, interaction: discord.Interaction):
         loaded = self.cog.get_loaded_cogs()

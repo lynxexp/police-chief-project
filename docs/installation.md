@@ -142,6 +142,30 @@ orchestrator (Docker's own restart policy, or Kubernetes/Podman if you're
 running it that way) is expected to bring it back up automatically — no
 manual restart command needed, unlike the Windows-host case above.
 
+## Staying updated
+
+The bot checks GitHub for new releases every 6 hours (and once at startup)
+and DMs the Global Admin when it's behind — see the **Version** line and
+**Update Checks** toggle in the Bot Health menu (`/health`) if you want to
+turn that off and update on your own schedule instead. Either way, updating
+itself is one step:
+
+- **Option A (Windows):** run `update.ps1` from the bot's folder. It pulls
+  the latest code, reinstalls dependencies only if `requirements.txt`
+  actually changed, and restarts the bot for you.
+- **Option A (Linux/Mac):** run `./update.sh` — same thing, and it restarts
+  via `systemctl` automatically if you've set up
+  `police-chief-bot.service`.
+- **Option B (Docker):** `git pull && docker compose up -d --build`. This
+  fork doesn't publish a registry image yet (see the comment in
+  `docker-compose.yml`), so this rebuilds locally rather than pulling a
+  prebuilt image — slower than a plain `pull` but the correct command for
+  the current setup.
+
+Neither script ever discards local changes — if you've edited tracked
+files yourself, `git pull` will say so and stop, same as it would running
+the command by hand.
+
 ## Migrating between installs
 
 If you've been testing on one server/machine and want to move to a

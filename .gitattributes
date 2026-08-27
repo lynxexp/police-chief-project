@@ -1,5 +1,7 @@
 docker/Dockerfile text eol=lf
 docker/bootstrap.sh text eol=lf
+update.sh text eol=lf
+police-chief-bot.service text eol=lf
 
 # Developer-only: excluded from release source archives
 tests/ export-ignore
