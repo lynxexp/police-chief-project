@@ -173,7 +173,13 @@ git push origin $tag
 # message containing embedded quotes). A file has no such ambiguity
 # regardless of shell involved.
 $notesFile = New-TemporaryFile
-Set-Content -Path $notesFile -Value $releaseNotes -Encoding utf8NoBOM
+# [System.IO.File]::WriteAllText, not Set-Content -- Windows PowerShell
+# 5.1's Set-Content -Encoding has no BOM-less UTF-8 option at all
+# ("utf8NoBOM" is a PowerShell 6+/Core name, not valid here; plain
+# "utf8" writes a BOM, the exact bug already fixed once this session for
+# the `version` file). .NET's WriteAllText(path, text) -- the two-arg
+# overload, no Encoding object passed -- defaults to UTF-8 without a BOM.
+[System.IO.File]::WriteAllText($notesFile, $releaseNotes)
 try {
     $ghArgs = @("release", "create", $tag, "--title", $tag, "--notes-file", $notesFile)
     if ($Draft) { $ghArgs += "--draft" }
