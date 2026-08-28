@@ -40,13 +40,38 @@ function NavLink({ item, active, onNavigate }: { item: NavItem; active: boolean;
   );
 }
 
+/** Tools that need no login at all -- pure static game data/calculators,
+ * nothing alliance-specific for a login to protect. Shown to logged-out
+ * visitors (including on /login itself) AND folded into the logged-in
+ * sidebar's top section below, so this list is the one place to add the
+ * next one rather than two. */
+const PUBLIC_TOOLS: NavItem[] = [{ to: "/electro-building-calculator", label: "Electro Building Calculator", icon: "🏗️" }];
+
 /** Sidebar nav content, shared by the desktop rail and the mobile drawer.
  * Builds its own section list from route params + auth tier rather than
  * being handed props, so every page gets full navigation for free just by
  * rendering <Layout> -- no per-page wiring. */
-export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext; onNavigate: () => void }) {
+export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; onNavigate: () => void }) {
   const location = useLocation();
   const { allianceId } = useParams<{ allianceId?: string }>();
+
+  if (!ctx) {
+    return (
+      <nav className="flex h-full flex-col gap-5 overflow-y-auto px-3 py-4">
+        <div>
+          <div className="mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Free tools
+          </div>
+          <div className="flex flex-col gap-0.5">
+            {PUBLIC_TOOLS.map((item) => (
+              <NavLink key={item.to} item={item} active={isActive(location.pathname, item)} onNavigate={onNavigate} />
+            ))}
+          </div>
+        </div>
+      </nav>
+    );
+  }
+
   const isAdmin = ctx.tier !== "none";
 
   const sections: NavSection[] = [
@@ -54,6 +79,7 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext; onNaviga
       items: [
         { to: "/", label: "Your profile", icon: "👤", exact: true },
         { to: "/gift-codes", label: "Gift codes", icon: "🎁" },
+        ...PUBLIC_TOOLS,
       ],
     },
   ];

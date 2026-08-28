@@ -27,6 +27,7 @@ import AdminCustomEventCreate from "./pages/AdminCustomEventCreate";
 import AdminCustomEventDetail from "./pages/AdminCustomEventDetail";
 import AdminScheduleBoards from "./pages/AdminScheduleBoards";
 import CalendarPage from "./pages/Calendar";
+import ElectroBuildingCalculator from "./pages/ElectroBuildingCalculator";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,6 +44,13 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          {/* Deliberately not under ProtectedRoute -- pure static game
+              data, nothing alliance-specific, so there's nothing here a
+              login would be protecting. Layout/Sidebar render a
+              logged-out-appropriate chrome (see their own comments) when
+              there's no outlet context, which is the case for any route
+              out here. */}
+          <Route path="/electro-building-calculator" element={<ElectroBuildingCalculator />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/select-guild" element={<GuildSelect />} />
             <Route path="/" element={<Profile />} />

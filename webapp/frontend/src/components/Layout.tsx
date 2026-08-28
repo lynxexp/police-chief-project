@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { logout, type AuthContext } from "../api/client";
+import { logout, LOGIN_URL, type AuthContext } from "../api/client";
 import { SidebarContent } from "./Sidebar";
 
 const TIER_LABELS: Record<AuthContext["tier"], string> = {
@@ -19,7 +19,14 @@ const TIER_LABELS: Record<AuthContext["tier"], string> = {
  * itself isn't the route element -- and since this is rendered as a
  * descendant of the matched route, useLocation/useParams inside
  * SidebarContent see the same route params the page itself does, with no
- * per-page wiring needed. */
+ * per-page wiring needed.
+ *
+ * A handful of routes (the Building Calculator) render Layout OUTSIDE
+ * ProtectedRoute's Outlet on purpose -- they need no login at all, so
+ * useOutletContext resolves to undefined there rather than a real
+ * AuthContext. Normalized to null below so every ctx check in this file
+ * and in Sidebar.tsx is one falsy check, not two different "no auth"
+ * representations to remember. */
 export default function Layout({
   title,
   backTo,
@@ -32,7 +39,7 @@ export default function Layout({
   actions?: ReactNode;
   children: ReactNode;
 }) {
-  const ctx = useOutletContext<AuthContext>();
+  const ctx = useOutletContext<AuthContext | undefined>() ?? null;
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -59,7 +66,7 @@ export default function Layout({
     },
   });
 
-  const sidebarFooter = (
+  const sidebarFooter = ctx ? (
     <div className="flex items-center justify-between gap-2 border-t border-slate-800 px-3 py-3">
       <span className="truncate text-xs text-slate-500">{TIER_LABELS[ctx.tier]}</span>
       <button
@@ -70,7 +77,18 @@ export default function Layout({
         Sign out
       </button>
     </div>
+  ) : (
+    <div className="border-t border-slate-800 px-3 py-3">
+      <a
+        href={LOGIN_URL}
+        className="block rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white hover:bg-indigo-500"
+      >
+        Sign in with Discord
+      </a>
+    </div>
   );
+
+  const homeLink = ctx ? "/" : "/electro-building-calculator";
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -85,16 +103,16 @@ export default function Layout({
             <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
         </button>
-        <Link to="/" className="font-semibold hover:text-indigo-400">
+        <Link to={homeLink} className="font-semibold hover:text-indigo-400">
           Police Chief
         </Link>
-        <span className="text-xs text-slate-500">{TIER_LABELS[ctx.tier]}</span>
+        <span className="text-xs text-slate-500">{ctx ? TIER_LABELS[ctx.tier] : "Guest"}</span>
       </header>
 
       <div className="mx-auto flex max-w-[88rem]">
         {/* Desktop sidebar */}
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40 lg:flex">
-          <Link to="/" className="flex items-center gap-2 px-4 py-4 font-semibold hover:text-indigo-400">
+          <Link to={homeLink} className="flex items-center gap-2 px-4 py-4 font-semibold hover:text-indigo-400">
             <span aria-hidden="true">🛡️</span> Police Chief
           </Link>
           <div className="min-h-0 flex-1">
@@ -113,7 +131,7 @@ export default function Layout({
             />
             <aside className="absolute inset-y-0 left-0 flex w-64 flex-col bg-slate-950 shadow-xl">
               <div className="flex items-center justify-between px-4 py-4">
-                <Link to="/" className="font-semibold hover:text-indigo-400">
+                <Link to={homeLink} className="font-semibold hover:text-indigo-400">
                   🛡️ Police Chief
                 </Link>
                 <button
