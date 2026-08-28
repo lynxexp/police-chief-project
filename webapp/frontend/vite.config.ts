@@ -10,6 +10,9 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    // Bind to all interfaces (not just localhost) so a phone on the same
+    // Wi-Fi can reach this dev server for mobile QA, via LAN IP:5173.
+    host: true,
     proxy: {
       "/api": {
         target: "http://localhost:3000",

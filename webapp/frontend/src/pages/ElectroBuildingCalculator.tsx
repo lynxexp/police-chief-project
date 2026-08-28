@@ -29,30 +29,73 @@ const RESOURCE_LABELS: { key: keyof ResourceTotal; label: string; icon: string }
   { key: "electroCores", label: "Electro Cores", icon: "🔷" },
 ];
 
+// Plain number inputs are genuinely hard to use on a phone for a small,
+// bounded range like this (30-45): the OS numeric keyboard covers most of
+// the screen just to nudge a value by one, and native spinner arrows are
+// tiny, inconsistent across mobile browsers, and easy to mis-tap. +/-
+// buttons sized for a thumb (h-9 w-9, comfortably within Apple's 44px/CSS
+// px touch-target guidance once padding's counted) cover the common
+// "bump it up a bit" case without opening a keyboard at all; the field
+// itself stays directly editable (type="text" + inputMode="numeric" for
+// a numeric-only keypad, not type="number", so there's no inconsistent
+// native spinner UI to fight with across browsers).
 function LevelInput({
   value,
-  onChange,
+  onStep,
+  onSetAbsolute,
   min,
   max,
 }: {
   value: number;
-  onChange: (v: number) => void;
+  /** Relative change from a +/- tap. Resolved against the PARENT's latest
+   * state via a functional setState update, not against this component's
+   * `value` prop -- a rapid run of taps fires several onClick handlers
+   * before React re-renders this component with a fresh `value`, so any
+   * handler that computed `value + delta` itself would have every one of
+   * those taps read the same stale number and only net one step instead of
+   * several (confirmed via scripted rapid clicks during mobile QA). */
+  onStep: (delta: number) => void;
+  /** Absolute value from typing directly into the field. No staleness risk
+   * here -- it's computed from the input's own current text, not a prop. */
+  onSetAbsolute: (v: number) => void;
   min: number;
   max: number;
 }) {
   return (
-    <input
-      type="number"
-      min={min}
-      max={max}
-      value={value}
-      onChange={(e) => {
-        const n = Number(e.target.value);
-        if (Number.isNaN(n)) return;
-        onChange(Math.max(min, Math.min(max, n)));
-      }}
-      className="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm"
-    />
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onStep(-1)}
+        disabled={value <= min}
+        aria-label="Decrease"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-slate-700 text-lg leading-none text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+      >
+        −
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={value}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/\D/g, "");
+          if (!digits) return;
+          const n = Number(digits);
+          if (Number.isNaN(n)) return;
+          onSetAbsolute(Math.max(min, Math.min(max, n)));
+        }}
+        className="w-11 shrink-0 rounded border border-slate-700 bg-slate-950 px-1 py-1.5 text-center text-sm"
+      />
+      <button
+        type="button"
+        onClick={() => onStep(1)}
+        disabled={value >= max}
+        aria-label="Increase"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-slate-700 text-lg leading-none text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+      >
+        +
+      </button>
+    </div>
   );
 }
 
@@ -79,6 +122,25 @@ export default function ElectroBuildingCalculator() {
 
   function setGoal(name: string, level: number) {
     setGoalLevels((prev) => ({ ...prev, [name]: Math.max(level, currentLevels[name]) }));
+  }
+
+  // Stepper (+/-) variants of the above, resolving the new value entirely
+  // inside a functional setState update rather than from a component prop
+  // -- see LevelInput's onStep doc comment for why that distinction matters
+  // under rapid taps.
+  function stepCurrent(name: string, delta: number) {
+    setCurrentLevels((prev) => {
+      const next = Math.max(MIN_LEVEL, Math.min(MAX_LEVEL, prev[name] + delta));
+      setGoalLevels((prevGoal) => (prevGoal[name] < next ? { ...prevGoal, [name]: next } : prevGoal));
+      return { ...prev, [name]: next };
+    });
+  }
+
+  function stepGoal(name: string, delta: number) {
+    setGoalLevels((prev) => {
+      const next = Math.max(MIN_LEVEL, Math.min(MAX_LEVEL, prev[name] + delta));
+      return { ...prev, [name]: Math.max(next, currentLevels[name]) };
+    });
   }
 
   const { requiredLevels, notes } = useMemo(
@@ -130,7 +192,40 @@ export default function ElectroBuildingCalculator() {
 
       <Card className="mb-6">
         <SectionHeading>Your buildings</SectionHeading>
-        <div className="overflow-x-auto">
+
+        {/* Below sm: a stepper control per building needs more width than a
+            3-column table leaves it on a phone (confirmed -- the table
+            version overflowed horizontally at 375px). Stacked cards give
+            each building's Current/Goal controls the full row width instead. */}
+        <div className="flex flex-col gap-3 sm:hidden">
+          {BUILDING_NAMES.map((name) => (
+            <div key={name} className="rounded border border-slate-800 p-3">
+              <div className="mb-2 font-medium text-slate-200">{name}</div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-400">Current</span>
+                <LevelInput
+                  value={currentLevels[name]}
+                  min={MIN_LEVEL}
+                  max={MAX_LEVEL}
+                  onStep={(d) => stepCurrent(name, d)}
+                  onSetAbsolute={(v) => setCurrent(name, v)}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-400">Goal</span>
+                <LevelInput
+                  value={goalLevels[name]}
+                  min={currentLevels[name]}
+                  max={MAX_LEVEL}
+                  onStep={(d) => stepGoal(name, d)}
+                  onSetAbsolute={(v) => setGoal(name, v)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
               <tr>
@@ -148,7 +243,8 @@ export default function ElectroBuildingCalculator() {
                       value={currentLevels[name]}
                       min={MIN_LEVEL}
                       max={MAX_LEVEL}
-                      onChange={(v) => setCurrent(name, v)}
+                      onStep={(d) => stepCurrent(name, d)}
+                      onSetAbsolute={(v) => setCurrent(name, v)}
                     />
                   </td>
                   <td className="py-2">
@@ -156,7 +252,8 @@ export default function ElectroBuildingCalculator() {
                       value={goalLevels[name]}
                       min={currentLevels[name]}
                       max={MAX_LEVEL}
-                      onChange={(v) => setGoal(name, v)}
+                      onStep={(d) => stepGoal(name, d)}
+                      onSetAbsolute={(v) => setGoal(name, v)}
                     />
                   </td>
                 </tr>
