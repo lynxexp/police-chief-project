@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import ProtectedRoute from "./components/ProtectedRoute";
+import ProtectedRoute, { OptionalAuthRoute } from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import GuildSelect from "./pages/GuildSelect";
 import Profile from "./pages/Profile";
@@ -46,11 +46,13 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           {/* Deliberately not under ProtectedRoute -- pure static game
               data, nothing alliance-specific, so there's nothing here a
-              login would be protecting. Layout/Sidebar render a
-              logged-out-appropriate chrome (see their own comments) when
-              there's no outlet context, which is the case for any route
-              out here. */}
-          <Route path="/electro-building-calculator" element={<ElectroBuildingCalculator />} />
+              login would be protecting. OptionalAuthRoute still checks for
+              an existing session (without redirecting when there isn't
+              one) so a visitor who's already logged in sees their real
+              signed-in chrome here instead of always looking logged out. */}
+          <Route element={<OptionalAuthRoute />}>
+            <Route path="/electro-building-calculator" element={<ElectroBuildingCalculator />} />
+          </Route>
           <Route element={<ProtectedRoute />}>
             <Route path="/select-guild" element={<GuildSelect />} />
             <Route path="/" element={<Profile />} />
