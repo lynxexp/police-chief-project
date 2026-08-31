@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import Layout from "../components/Layout";
@@ -6,12 +6,13 @@ import { getTheme, updateTheme, type ThemeDetail } from "../api/client";
 import { ICON_CATEGORIES, DIVIDER_INDICES, COLOR_FIELDS } from "../theming/icons";
 import { buildThemePreview, PREVIEW_PAGE_TITLES } from "../theming/preview";
 import DiscordEmbedPreview from "../components/DiscordEmbedPreview";
-import { ErrorState, LoadingState, buttonPrimary, buttonSecondary } from "../components/ui";
+import { Card, ErrorState, LoadingState, Pill, buttonPrimary, buttonSecondary } from "../components/ui";
 
 const DIVIDER_SUBFIELDS = ["Start", "Pattern", "End", "Length", "CodeBlock"] as const;
 const DIVIDER_KEYS = DIVIDER_INDICES.flatMap((i) => DIVIDER_SUBFIELDS.map((f) => `divider${f}${i}`));
 const ICON_KEYS = Object.values(ICON_CATEGORIES).flat();
 const EDITABLE_KEYS = new Set([...ICON_KEYS, ...DIVIDER_KEYS, ...COLOR_FIELDS.map((c) => c.key), "themeDescription"]);
+const CATEGORIES = Object.keys(ICON_CATEGORIES);
 
 /** "shutdownSparkleIcon" -> "Shutdown Sparkle" */
 function iconLabel(column: string): string {
@@ -25,7 +26,7 @@ export default function AdminThemeEditor() {
   const themeName = themeNameParam ?? "";
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin-theme", themeName],
     queryFn: () => getTheme(themeName),
   });
@@ -36,6 +37,15 @@ export default function AdminThemeEditor() {
   }, [data]);
 
   const [previewPage, setPreviewPage] = useState(0);
+  const [category, setCategory] = useState(CATEGORIES[0]);
+
+  const isDirty = useMemo(() => {
+    if (!draft || !data) return false;
+    for (const key of EDITABLE_KEYS) {
+      if (draft[key] !== data[key]) return true;
+    }
+    return false;
+  }, [draft, data]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -55,183 +65,161 @@ export default function AdminThemeEditor() {
     setDraft({ ...draft, [key]: value });
   };
 
+  const fieldInput = "w-full rounded-control border border-line bg-surface-sunken px-2.5 py-1.5 text-sm text-ink focus:border-line-strong";
+
   return (
-    <Layout title={`Theme: ${themeName}`} backTo={{ to: "/admin/themes", label: "Themes" }}>
+    <Layout
+      title={`Theme: ${themeName}`}
+      backTo={{ to: "/admin/themes", label: "Themes" }}
+      actions={
+        draft && (
+          <div className="flex items-center gap-3">
+            {isDirty && <span className="font-mono text-xs text-down-ink uppercase">Unsaved changes</span>}
+            <button
+              onClick={() => saveMutation.mutate()}
+              disabled={!isDirty || saveMutation.isPending}
+              className={isDirty ? buttonPrimary : `${buttonSecondary} text-ink-disabled`}
+            >
+              Save
+            </button>
+            {saveMutation.isSuccess && !isDirty && <span className="font-mono text-xs text-up-ink">Saved</span>}
+            {saveMutation.isError && <span className="font-mono text-xs text-down-ink">Couldn't save</span>}
+          </div>
+        )
+      }
+    >
       {isLoading && <LoadingState />}
-      {error && <ErrorState message="Couldn't load theme." />}
+      {error && <ErrorState message="Couldn't load theme." onRetry={refetch} />}
 
       {draft && (
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm text-slate-400">
-              Description
+        <div className="grid gap-5 lg:grid-cols-[1.25fr_1fr]">
+          <div className="flex flex-col gap-4">
+            <label className="block">
+              <span className="mb-1 block text-sm text-ink-secondary">Description</span>
               <input
                 value={(draft.themeDescription as string) ?? ""}
                 onChange={(e) => set("themeDescription", e.target.value)}
-                className="mt-1 w-full max-w-md rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                className="w-full max-w-md rounded-control border border-line bg-surface-sunken px-3 py-2 text-sm text-ink"
               />
             </label>
-          </div>
 
-          <div className="sticky top-0 z-10 -mx-6 bg-slate-950/95 px-6 py-3 backdrop-blur">
-            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className={buttonPrimary}>
-              Save
-            </button>
-            {saveMutation.isSuccess && (
-              <span className="ml-3 text-sm text-emerald-400">Saved.</span>
-            )}
-            {saveMutation.isError && (
-              <span className="ml-3 text-sm text-red-400">Couldn't save.</span>
-            )}
-          </div>
-
-          <details className="rounded-lg border border-slate-800 bg-slate-900 p-4" open>
-            <summary className="cursor-pointer text-sm font-medium text-slate-300">
-              Preview
-            </summary>
-            <div className="mt-3">
-              <div className="mb-3 flex items-center gap-3 text-sm">
-                <button
-                  onClick={() => setPreviewPage((p) => Math.max(0, p - 1))}
-                  disabled={previewPage === 0}
-                  className={buttonSecondary}
-                >
-                  ← Prev
-                </button>
-                <span className="text-slate-400">
-                  {previewPage + 1}/{PREVIEW_PAGE_TITLES.length} — {PREVIEW_PAGE_TITLES[previewPage]}
-                </span>
-                <button
-                  onClick={() => setPreviewPage((p) => Math.min(PREVIEW_PAGE_TITLES.length - 1, p + 1))}
-                  disabled={previewPage === PREVIEW_PAGE_TITLES.length - 1}
-                  className={buttonSecondary}
-                >
-                  Next →
-                </button>
-              </div>
-              <DiscordEmbedPreview embed={buildThemePreview(previewPage, draft)} applyPlaceholders={false} />
-              <p className="mt-2 text-xs text-slate-500">
-                Preview: {PREVIEW_PAGE_TITLES[previewPage]} • Theme: {themeName}
-              </p>
+            <div className="flex flex-wrap gap-1.5">
+              {CATEGORIES.map((c) => (
+                <Pill key={c} active={category === c} onClick={() => setCategory(c)}>
+                  {c} ({ICON_CATEGORIES[c].length})
+                </Pill>
+              ))}
             </div>
-          </details>
 
-          <details className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <summary className="cursor-pointer text-sm font-medium text-slate-300">
-              Colors
-            </summary>
-            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {COLOR_FIELDS.map(({ key, label }) => (
-                <div key={key}>
-                  <span className="mb-1 block text-xs text-slate-400">{label}</span>
-                  <div className="flex items-center gap-2">
-                    <label>
-                      <span className="sr-only">{label} swatch</span>
+            <Card>
+              <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+                {ICON_CATEGORIES[category].map((iconKey) => (
+                  <label key={iconKey} className="grid grid-cols-[1fr_200px] items-center gap-2">
+                    <span className="truncate text-sm text-ink-secondary">{iconLabel(iconKey)}</span>
+                    <input
+                      value={(draft[iconKey] as string) ?? ""}
+                      onChange={(e) => set(iconKey, e.target.value)}
+                      className={`${fieldInput} font-mono text-center`}
+                    />
+                  </label>
+                ))}
+              </div>
+            </Card>
+
+            <Card>
+              <p className="mb-3 font-display text-[15px] font-semibold tracking-heading text-ink uppercase">Embed colour</p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {COLOR_FIELDS.map(({ key, label }) => (
+                  <div key={key}>
+                    <span className="mb-1 block text-xs text-ink-muted">{label}</span>
+                    <div className="flex items-center gap-2">
                       <input
                         type="color"
                         value={(draft[key] as string) || "#000000"}
                         onChange={(e) => set(key, e.target.value)}
-                        className="h-8 w-8 rounded border border-slate-700 bg-slate-900"
+                        className="h-[34px] w-[34px] rounded-control border border-line"
                       />
-                    </label>
-                    <label className="flex-1">
-                      <span className="sr-only">{label} hex code</span>
-                      <input
-                        value={(draft[key] as string) ?? ""}
-                        onChange={(e) => set(key, e.target.value)}
-                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
-                      />
-                    </label>
+                      <input value={(draft[key] as string) ?? ""} onChange={(e) => set(key, e.target.value)} className={`${fieldInput} font-mono`} />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </details>
+                ))}
+              </div>
+            </Card>
 
-          <details className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <summary className="cursor-pointer text-sm font-medium text-slate-300">
-              Dividers
-            </summary>
-            <div className="mt-3 space-y-3">
-              {DIVIDER_INDICES.map((i) => (
-                <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      Start {i}
-                      <input
-                        value={(draft[`dividerStart${i}`] as string) ?? ""}
-                        onChange={(e) => set(`dividerStart${i}`, e.target.value)}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
-                      />
+            <Card>
+              <p className="mb-3 font-display text-[15px] font-semibold tracking-heading text-ink uppercase">Dividers</p>
+              <div className="flex flex-col gap-3">
+                {DIVIDER_INDICES.map((i) => (
+                  <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-ink-muted">Start {i}</span>
+                      <input value={(draft[`dividerStart${i}`] as string) ?? ""} onChange={(e) => set(`dividerStart${i}`, e.target.value)} className={fieldInput} />
                     </label>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      Pattern {i}
-                      <input
-                        value={(draft[`dividerPattern${i}`] as string) ?? ""}
-                        onChange={(e) => set(`dividerPattern${i}`, e.target.value)}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
-                      />
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-ink-muted">Pattern {i}</span>
+                      <input value={(draft[`dividerPattern${i}`] as string) ?? ""} onChange={(e) => set(`dividerPattern${i}`, e.target.value)} className={fieldInput} />
                     </label>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      End {i}
-                      <input
-                        value={(draft[`dividerEnd${i}`] as string) ?? ""}
-                        onChange={(e) => set(`dividerEnd${i}`, e.target.value)}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
-                      />
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-ink-muted">End {i}</span>
+                      <input value={(draft[`dividerEnd${i}`] as string) ?? ""} onChange={(e) => set(`dividerEnd${i}`, e.target.value)} className={fieldInput} />
                     </label>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      Length {i}
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-ink-muted">Length {i}</span>
                       <input
                         type="number"
                         min={0}
                         value={(draft[`dividerLength${i}`] as number) ?? 0}
                         onChange={(e) => set(`dividerLength${i}`, Number(e.target.value))}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                        className={fieldInput}
                       />
                     </label>
-                  </div>
-                  <label className="flex items-end gap-1 pb-1 text-xs text-slate-400">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(draft[`dividerCodeBlock${i}`])}
-                      onChange={(e) => set(`dividerCodeBlock${i}`, e.target.checked ? 1 : 0)}
-                      className="rounded border-slate-700 bg-slate-950"
-                    />
-                    Code block
-                  </label>
-                </div>
-              ))}
-            </div>
-          </details>
-
-          {Object.entries(ICON_CATEGORIES).map(([category, icons]) => (
-            <details key={category} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-              <summary className="cursor-pointer text-sm font-medium text-slate-300">
-                {category} <span className="text-slate-500">({icons.length})</span>
-              </summary>
-              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {icons.map((iconKey) => (
-                  <div key={iconKey}>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      {iconLabel(iconKey)}
+                    <label className="flex items-end gap-1.5 pb-1.5 text-xs text-ink-muted">
                       <input
-                        value={(draft[iconKey] as string) ?? ""}
-                        onChange={(e) => set(iconKey, e.target.value)}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-center text-sm text-slate-100"
+                        type="checkbox"
+                        checked={Boolean(draft[`dividerCodeBlock${i}`])}
+                        onChange={(e) => set(`dividerCodeBlock${i}`, e.target.checked ? 1 : 0)}
+                        className="rounded border-line bg-surface-sunken"
                       />
+                      Code block
                     </label>
                   </div>
                 ))}
               </div>
-            </details>
-          ))}
+            </Card>
+          </div>
+
+          <div className="lg:sticky lg:top-4 lg:h-fit">
+            <Card>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="font-mono text-xs font-bold tracking-pill text-gold-ink uppercase">
+                  Live preview · {previewPage + 1} of {PREVIEW_PAGE_TITLES.length}
+                </p>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setPreviewPage((p) => Math.max(0, p - 1))}
+                    disabled={previewPage === 0}
+                    aria-label="Previous preview"
+                    className="grid h-7 w-7 place-items-center rounded-control border border-line-strong text-ink-secondary disabled:opacity-30"
+                  >
+                    ←
+                  </button>
+                  <button
+                    onClick={() => setPreviewPage((p) => Math.min(PREVIEW_PAGE_TITLES.length - 1, p + 1))}
+                    disabled={previewPage === PREVIEW_PAGE_TITLES.length - 1}
+                    aria-label="Next preview"
+                    className="grid h-7 w-7 place-items-center rounded-control border border-line-strong text-ink-secondary disabled:opacity-30"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+              <DiscordEmbedPreview embed={buildThemePreview(previewPage, draft)} applyPlaceholders={false} />
+              <p className="mt-3 border-t border-line-hairline pt-3 text-xs text-ink-faint">
+                {PREVIEW_PAGE_TITLES[previewPage]}. The preview updates as you type. Nothing persists until you hit Save.
+              </p>
+              <p className="mt-2 font-mono text-[11px] text-ink-faint">The bot is currently posting with theme: {themeName}</p>
+            </Card>
+          </div>
         </div>
       )}
     </Layout>

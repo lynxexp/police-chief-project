@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
+import { X } from "lucide-react";
 import Layout from "../components/Layout";
 import {
   getAllianceSettings,
@@ -20,7 +21,7 @@ import {
   type AllianceSettings,
   type IdChannelScanSettings,
 } from "../api/client";
-import { ErrorState, LoadingState, buttonPrimary } from "../components/ui";
+import { Card, ErrorState, LoadingState, Toggle, buttonPrimary, buttonSecondary } from "../components/ui";
 
 const FIELDS: { key: keyof AllianceSettings; label: string }[] = [
   { key: "channelId", label: "Main channel" },
@@ -28,6 +29,43 @@ const FIELDS: { key: keyof AllianceSettings; label: string }[] = [
   { key: "vaultScoreChannel", label: "Vault Trap score channel" },
   { key: "capitolScoreChannel", label: "Capitol War score channel" },
 ];
+
+function ChannelSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string | null;
+  onChange: (v: string | null) => void;
+  options: { id: string; name: string }[];
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm text-ink-secondary">{label}</span>
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="w-full rounded-control border border-line bg-surface-sunken px-3 py-2 text-sm text-ink"
+      >
+        <option value="" className="text-ink-disabled">
+          Not set
+        </option>
+        {options.map((c) => (
+          <option key={c.id} value={c.id}>
+            #{c.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SavedTag({ show }: { show: boolean }) {
+  if (!show) return null;
+  return <span className="ml-3 font-mono text-xs text-up-ink">SAVED</span>;
+}
 
 export default function AdminChannelSettings() {
   const { allianceId: allianceIdParam } = useParams<{ allianceId: string }>();
@@ -50,8 +88,7 @@ export default function AdminChannelSettings() {
 
   const saveMutation = useMutation({
     mutationFn: (patch: Partial<AllianceSettings>) => updateAllianceSettings(allianceId, patch),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["admin-alliance-settings", allianceId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-alliance-settings", allianceId] }),
   });
 
   // Separate resource (db/giftcode.sqlite's giftcode_channel, not
@@ -67,8 +104,7 @@ export default function AdminChannelSettings() {
   }, [giftChannelQuery.data]);
   const saveGiftChannelMutation = useMutation({
     mutationFn: (channelId: string | null) => updateAllianceGiftChannel(allianceId, channelId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["admin-alliance-gift-channel", allianceId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-alliance-gift-channel", allianceId] }),
   });
 
   // ID channels -- per-alliance list, any admin with reach to this
@@ -87,8 +123,7 @@ export default function AdminChannelSettings() {
   });
   const removeIdChannelMutation = useMutation({
     mutationFn: (channelId: string) => removeAllianceIdChannel(allianceId, channelId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["admin-alliance-id-channels", allianceId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-alliance-id-channels", allianceId] }),
   });
 
   // Scan settings are per-GUILD, not per-alliance (canManageGuild,
@@ -109,8 +144,7 @@ export default function AdminChannelSettings() {
   }, [scanSettingsQuery.data]);
   const saveScanSettingsMutation = useMutation({
     mutationFn: (patch: Partial<IdChannelScanSettings>) => updateIdChannelSettings(guildId!, patch),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["admin-guild-scan-settings", guildId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-guild-scan-settings", guildId] }),
   });
 
   // Which theme this guild uses -- also per-guild (canManageGuild).
@@ -126,194 +160,155 @@ export default function AdminChannelSettings() {
   });
 
   return (
-    <Layout
-      title="Channel setup"
-      backTo={{ to: `/admin/alliances/${allianceId}/members`, label: "Members" }}
-    >
+    <Layout title="Channel setup" backTo={{ to: `/admin/alliances/${allianceId}/members`, label: "Members" }}>
       {(settingsQuery.isLoading || channelsQuery.isLoading) && <LoadingState />}
       {(settingsQuery.error || channelsQuery.error) && (
-        <ErrorState message="Couldn't load channel settings." />
+        <ErrorState message="Couldn't load channel settings." onRetry={() => { settingsQuery.refetch(); channelsQuery.refetch(); }} />
       )}
 
       {draft && channelsQuery.data && (
-        <div className="max-w-md space-y-4">
-          {FIELDS.map(({ key, label }) => (
-            <div key={key}>
-              <label className="mb-1 block text-sm text-slate-400">
-                {label}
-                <select
-                  value={draft[key] ?? ""}
-                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value || null })}
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                >
-                  <option value="">— none —</option>
-                  {channelsQuery.data.map((c) => (
+        <div className="flex max-w-xl flex-col gap-4">
+          {/* Panel 1: Alliance channels */}
+          <Card>
+            <p className="mb-1 font-display text-[17px] font-semibold tracking-heading text-ink uppercase">Alliance channels</p>
+            <p className="mb-4 text-xs text-ink-faint">Saves these four together.</p>
+            <div className="flex flex-col gap-3">
+              {FIELDS.map(({ key, label }) => (
+                <ChannelSelect
+                  key={key}
+                  label={label}
+                  value={draft[key]}
+                  onChange={(v) => setDraft({ ...draft, [key]: v })}
+                  options={channelsQuery.data!}
+                />
+              ))}
+            </div>
+            <div className="mt-4 flex items-center">
+              <button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isPending} className={buttonPrimary}>
+                Save
+              </button>
+              <SavedTag show={saveMutation.isSuccess} />
+              {saveMutation.isError && <span className="ml-3 text-xs text-down-ink">Couldn't save.</span>}
+            </div>
+          </Card>
+
+          {/* Panel 2: Gift code announcements */}
+          <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <p className="font-display text-[17px] font-semibold tracking-heading text-ink uppercase">Gift code announcements</p>
+              <span className="font-mono text-[10px] tracking-pill text-gold-ink uppercase">Separate setting</span>
+            </div>
+            <ChannelSelect label="Announcement channel" value={giftChannelDraft} onChange={setGiftChannelDraft} options={channelsQuery.data} />
+            <div className="mt-4 flex items-center">
+              <button onClick={() => saveGiftChannelMutation.mutate(giftChannelDraft)} disabled={saveGiftChannelMutation.isPending} className={buttonPrimary}>
+                Save
+              </button>
+              <SavedTag show={saveGiftChannelMutation.isSuccess} />
+            </div>
+          </Card>
+
+          {/* Panel 3: ID channels & scanning */}
+          <Card>
+            <p className="mb-1 font-display text-[17px] font-semibold tracking-heading text-ink uppercase">ID channels &amp; scanning</p>
+            <p className="mb-4 font-mono text-[11px] font-semibold text-down-ink uppercase">Server-wide — affects all alliances</p>
+
+            {idChannelsQuery.data && idChannelsQuery.data.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {idChannelsQuery.data.map((c) => {
+                  const channel = channelsQuery.data!.find((ch) => ch.id === c.channelId);
+                  return (
+                    <span key={c.channelId} className="flex items-center gap-1.5 rounded-pill border border-line-strong px-2.5 py-1 font-mono text-xs text-ink-secondary">
+                      #{channel?.name ?? c.channelId}
+                      <button
+                        onClick={() => removeIdChannelMutation.mutate(c.channelId)}
+                        disabled={removeIdChannelMutation.isPending}
+                        aria-label={`Remove #${channel?.name ?? c.channelId}`}
+                        className="text-ink-faint hover:text-down-ink"
+                      >
+                        <X size={12} strokeWidth={2} aria-hidden="true" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <select
+                value={newIdChannel}
+                onChange={(e) => setNewIdChannel(e.target.value)}
+                className="flex-1 rounded-control border border-dashed border-line-strong bg-surface-sunken px-3 py-2 text-sm text-ink"
+              >
+                <option value="">+ add channel</option>
+                {channelsQuery.data
+                  .filter((c) => !idChannelsQuery.data?.some((ic) => ic.channelId === c.id))
+                  .map((c) => (
                     <option key={c.id} value={c.id}>
                       #{c.name}
                     </option>
                   ))}
-                </select>
-              </label>
-            </div>
-          ))}
-
-          <button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isPending} className={buttonPrimary}>
-            Save
-          </button>
-          {saveMutation.isSuccess && <span className="ml-3 text-sm text-emerald-400">Saved.</span>}
-          {saveMutation.isError && (
-            <span className="ml-3 text-sm text-red-400">Couldn't save settings.</span>
-          )}
-
-          <div className="border-t border-slate-800 pt-4">
-            <label className="mb-1 block text-sm text-slate-400">
-              Gift code announcement channel
-              <select
-                value={giftChannelDraft ?? ""}
-                onChange={(e) => setGiftChannelDraft(e.target.value || null)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-              >
-                <option value="">— none —</option>
-                {channelsQuery.data.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    #{c.name}
-                  </option>
-                ))}
               </select>
-            </label>
-            <button
-              onClick={() => saveGiftChannelMutation.mutate(giftChannelDraft)}
-              disabled={saveGiftChannelMutation.isPending}
-              className={`mt-2 ${buttonPrimary}`}
-            >
-              Save
-            </button>
-            {saveGiftChannelMutation.isSuccess && (
-              <span className="ml-3 text-sm text-emerald-400">Saved.</span>
-            )}
-          </div>
-
-          <div className="border-t border-slate-800 pt-4">
-            <div className="mb-1 text-sm text-slate-400">ID channels</div>
-            {idChannelsQuery.data && idChannelsQuery.data.length > 0 && (
-              <ul className="mb-2 space-y-1 text-sm">
-                {idChannelsQuery.data.map((c) => {
-                  const channel = channelsQuery.data.find((ch) => ch.id === c.channelId);
-                  return (
-                    <li key={c.channelId} className="flex items-center justify-between">
-                      <span>#{channel?.name ?? c.channelId}</span>
-                      <button
-                        onClick={() => removeIdChannelMutation.mutate(c.channelId)}
-                        disabled={removeIdChannelMutation.isPending}
-                        className="text-xs text-slate-500 hover:text-red-400"
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <div className="flex gap-2">
-              <label className="flex-1">
-                <span className="sr-only">Add ID channel</span>
-                <select
-                  value={newIdChannel}
-                  onChange={(e) => setNewIdChannel(e.target.value)}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                >
-                  <option value="">— select a channel —</option>
-                  {channelsQuery.data
-                    .filter((c) => !idChannelsQuery.data?.some((ic) => ic.channelId === c.id))
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        #{c.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <button
-                onClick={() => addIdChannelMutation.mutate(newIdChannel)}
-                disabled={!newIdChannel || addIdChannelMutation.isPending}
-                className={buttonPrimary}
-              >
+              <button onClick={() => addIdChannelMutation.mutate(newIdChannel)} disabled={!newIdChannel || addIdChannelMutation.isPending} className={buttonSecondary}>
                 Add
               </button>
             </div>
-          </div>
 
-          {scanDraft && (
-            <div className="border-t border-slate-800 pt-4">
-              <div className="mb-2 text-sm text-slate-400">ID channel scan settings (server-wide)</div>
-              <div className="space-y-2 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={scanDraft.scanEnabled}
-                    onChange={(e) => setScanDraft({ ...scanDraft, scanEnabled: e.target.checked })}
-                    className="rounded border-slate-700 bg-slate-950"
-                  />
-                  Scan enabled
+            {scanDraft && (
+              <div className="mt-4 flex flex-col gap-3 border-t border-line-hairline pt-4">
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-ink-secondary">Scan enabled</span>
+                  <Toggle checked={scanDraft.scanEnabled} onChange={(v) => setScanDraft({ ...scanDraft, scanEnabled: v })} label="Scan enabled" />
                 </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={scanDraft.respondToInvalid}
-                    onChange={(e) =>
-                      setScanDraft({ ...scanDraft, respondToInvalid: e.target.checked })
-                    }
-                    className="rounded border-slate-700 bg-slate-950"
-                  />
-                  Respond to invalid IDs
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-ink-secondary">Respond to invalid IDs</span>
+                  <Toggle checked={scanDraft.respondToInvalid} onChange={(v) => setScanDraft({ ...scanDraft, respondToInvalid: v })} label="Respond to invalid IDs" />
                 </label>
-                <label className="flex items-center gap-2">
-                  <span className="w-32 text-slate-400">Scan limit</span>
+                <label className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-ink-secondary">Scan limit</span>
                   <input
                     type="number"
                     min={1}
                     value={scanDraft.scanLimit}
                     onChange={(e) => setScanDraft({ ...scanDraft, scanLimit: Number(e.target.value) })}
-                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
+                    className="w-24 rounded-control border border-line bg-surface-sunken px-2 py-1.5 text-sm text-ink"
                   />
                 </label>
-                <label className="flex items-center gap-2">
-                  <span className="w-32 text-slate-400">Delete after (s)</span>
+                <label className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-ink-secondary">Delete after (s)</span>
                   <input
                     type="number"
                     min={0}
                     value={scanDraft.deleteAfter}
                     onChange={(e) => setScanDraft({ ...scanDraft, deleteAfter: Number(e.target.value) })}
-                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
+                    className="w-24 rounded-control border border-line bg-surface-sunken px-2 py-1.5 text-sm text-ink"
                   />
                 </label>
+                <div className="flex items-center">
+                  <button onClick={() => saveScanSettingsMutation.mutate(scanDraft)} disabled={saveScanSettingsMutation.isPending} className={buttonPrimary}>
+                    Save
+                  </button>
+                  <SavedTag show={saveScanSettingsMutation.isSuccess} />
+                </div>
               </div>
-              <button
-                onClick={() => saveScanSettingsMutation.mutate(scanDraft)}
-                disabled={saveScanSettingsMutation.isPending}
-                className={`mt-3 ${buttonPrimary}`}
-              >
-                Save
-              </button>
-              {saveScanSettingsMutation.isSuccess && (
-                <span className="ml-3 text-sm text-emerald-400">Saved.</span>
-              )}
-            </div>
-          )}
+            )}
+          </Card>
 
+          {/* Panel 4: Theme */}
           {guildThemeQuery.data && themesQuery.data && (
-            <div className="border-t border-slate-800 pt-4">
-              <label className="mb-1 block text-sm text-slate-400">
-                Theme (server-wide) —{" "}
-                <Link to="/admin/themes" className="text-indigo-400 hover:text-indigo-300">
-                  manage themes
+            <Card>
+              <div className="mb-4 flex items-center justify-between">
+                <p className="font-display text-[17px] font-semibold tracking-heading text-ink uppercase">Theme</p>
+                <Link to="/admin/themes" className="font-sans text-sm text-gold-ink hover:text-text">
+                  Manage themes
                 </Link>
+              </div>
+              <label className="block">
                 <select
                   value={guildThemeQuery.data.themeName ?? ""}
                   onChange={(e) => setGuildThemeMutation.mutate(e.target.value || null)}
                   disabled={setGuildThemeMutation.isPending}
-                  className="mt-1 block w-full max-w-xs rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                  className="w-full rounded-control border border-line bg-surface-sunken px-3 py-2 text-sm text-ink"
                 >
-                  <option value="">— use global default —</option>
+                  <option value="">Use global default</option>
                   {themesQuery.data.map((t) => (
                     <option key={t.themeName} value={t.themeName}>
                       {t.themeName}
@@ -321,12 +316,9 @@ export default function AdminChannelSettings() {
                   ))}
                 </select>
               </label>
-              {setGuildThemeMutation.isSuccess && (
-                <span className="ml-3 text-sm text-emerald-400">Saved.</span>
-              )}
-            </div>
+              <SavedTag show={setGuildThemeMutation.isSuccess} />
+            </Card>
           )}
-
         </div>
       )}
     </Layout>

@@ -1,1 +1,340 @@
+/* ============================================================================
+   Police Chief dashboard — "Night Watch" design tokens
+   Drop-in replacement for webapp/frontend/src/index.css
+   Tailwind v4: no config file, theme is declared here via @theme.
+   ========================================================================== */
+
 @import "tailwindcss";
+
+/* ---------------------------------------------------------------- fonts ---
+   Self-hosted in public/fonts. Keep these separate from the repo-root
+   fonts/ folder used by the bot's OCR work.
+   ------------------------------------------------------------------------ */
+
+@font-face { font-family: "Barlow"; src: url("/fonts/barlow-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url("/fonts/barlow-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url("/fonts/barlow-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Barlow Condensed"; src: url("/fonts/barlow-condensed-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Barlow Condensed"; src: url("/fonts/barlow-condensed-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+
+/* --------------------------------------------------------------- tokens ---
+   Dark is the default. Light comes from the OS via prefers-color-scheme,
+   unless the user has picked an explicit mode with the rail's Dark/Light
+   toggle -- that sets data-theme="light"/"dark" on <html> (see
+   hooks/theme.ts) and wins over the OS preference either way.
+   ------------------------------------------------------------------------ */
+
+:root {
+  --surface-page: #0b0f14;
+  --surface-panel: #141b23;
+  --surface-panel-alt: #121920;
+  --surface-sunken: #0e141b;
+  --surface-header: #101820;
+  --border: #263341;
+  --border-strong: #33475b;
+  --border-hairline: #1e2a36;
+
+  /* navy rail — deep in BOTH modes, this is the brand anchor */
+  --rail-top: #151c25;
+  --rail-bottom: #10161d;
+  --rail-text: #a9b6c4;
+  --rail-label: #5f6b78;
+  --rail-border: #263341;
+
+  --text: #f4f7fa;
+  --text-secondary: #cfd9e4;
+  --text-muted: #8b98a6;
+  --text-faint: #7b8896;
+  --text-disabled: #4a5561;
+
+  /* signal colours: fills carry dark text, inks are text on page surface */
+  --gold-fill-from: #eacf62;
+  --gold-fill-to: #c9a227;
+  --gold-ink: #f2d97a;
+  --gold-border: #7a651c;
+  --gold-tint: rgba(201, 162, 39, .10);
+  --on-gold: #14202b;
+
+  --up-fill: #4fbf8b;
+  --up-ink: #4fbf8b;
+  --down-fill: #b23b3b;
+  --down-ink: #e0645f;
+  --down-border: #6b2f2f;
+  --down-tint: rgba(178, 59, 59, .14);
+
+  --info-ink: #7fb4f0;
+  --accent-purple: #b28ff0;
+  --discord: #5865f2;
+
+  --miss: #2c3b4b;
+  --portrait-stripe-a: #1d2833;
+  --portrait-stripe-b: #18222c;
+  --shield-silver: linear-gradient(160deg, #d3dae1, #8e99a4);
+  --shield-bronze: linear-gradient(160deg, #cf9366, #96643c);
+
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-enter: 240ms;
+  --motion-drawer: 220ms;
+  --motion-bounce: 320ms;
+  --motion-flash: 600ms;
+  --ease-drawer: cubic-bezier(.2, .8, .3, 1);
+  --ease-bounce: cubic-bezier(.34, 1.56, .64, 1);
+
+  --shadow-frame: 0 30px 60px -30px rgba(0, 0, 0, .8);
+
+  /* Hero panel (alliance overview) background -- a dedicated gradient,
+     not built from --surface-header/--surface-page: those two are
+     deliberately navy-in-both-modes (table headers) and page-background
+     respectively, and combining them here produced a jarring navy-grey
+     streak in light mode instead of the intended soft white sheen. */
+  --hero-gradient: linear-gradient(135deg, #16202b 0%, #101820 60%, #14202b 100%);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  /* :not([data-theme="dark"]) so an explicit "Dark" pick from the toggle
+     still wins even when the OS itself is set to light. */
+  :root:not([data-theme="dark"]) {
+    --surface-page: #f1f2f4;
+    --surface-panel: #ffffff;
+    --surface-panel-alt: #f7f8fa;
+    --hero-gradient: linear-gradient(135deg, #ffffff 0%, #f7f8fa 60%, #eef1f4 100%);
+    --surface-sunken: #eef1f4;
+    --surface-header: #1b2733;      /* table headers stay navy */
+    --border: #d9dee4;
+    --border-strong: #c3cbd4;
+    --border-hairline: #eef1f4;
+
+    --rail-top: #1b2733;
+    --rail-bottom: #141d26;
+    --rail-text: #b6c2cf;
+    --rail-label: #6b7a89;
+    --rail-border: #2c3b4b;
+
+    --text: #13191f;
+    --text-secondary: #3b4754;
+    --text-muted: #667585;
+    --text-faint: #7a8794;
+    --text-disabled: #a8b2bd;
+
+    --gold-ink: #8a6f18;            /* 5.4:1 — never use #F2D97A on white */
+    --gold-border: #c9a227;
+    --gold-tint: #fffaeb;
+
+    --up-fill: #35a06f;
+    --up-ink: #1f7d55;
+    --down-fill: #c8433c;
+    --down-ink: #a92e28;
+    --down-border: #e8b7b4;
+    --down-tint: #fdf3f2;
+
+    --info-ink: #2c6bab;
+    --accent-purple: #7a4fc0;
+
+    --miss: #c3cbd4;
+    --portrait-stripe-a: #eef1f5;
+    --portrait-stripe-b: #e4e8ee;
+    --shield-silver: linear-gradient(160deg, #dfe5ea, #97a3ae);
+    --shield-bronze: linear-gradient(160deg, #d69c6f, #9d6a41);
+
+    color-scheme: light;
+  }
+}
+
+/* Explicit "Light" pick from the toggle -- wins regardless of the OS
+   setting. Same values as the media-query block above; CSS custom
+   properties have no mixin, so this is duplicated on purpose rather than
+   sharing a nested rule across two different at-rule conditions. Keep
+   both in sync if a token value changes. */
+:root[data-theme="light"] {
+  --surface-page: #f1f2f4;
+  --surface-panel: #ffffff;
+  --surface-panel-alt: #f7f8fa;
+  --hero-gradient: linear-gradient(135deg, #ffffff 0%, #f7f8fa 60%, #eef1f4 100%);
+  --surface-sunken: #eef1f4;
+  --surface-header: #1b2733;
+  --border: #d9dee4;
+  --border-strong: #c3cbd4;
+  --border-hairline: #eef1f4;
+
+  --rail-top: #1b2733;
+  --rail-bottom: #141d26;
+  --rail-text: #b6c2cf;
+  --rail-label: #6b7a89;
+  --rail-border: #2c3b4b;
+
+  --text: #13191f;
+  --text-secondary: #3b4754;
+  --text-muted: #667585;
+  --text-faint: #7a8794;
+  --text-disabled: #a8b2bd;
+
+  --gold-ink: #8a6f18;
+  --gold-border: #c9a227;
+  --gold-tint: #fffaeb;
+
+  --up-fill: #35a06f;
+  --up-ink: #1f7d55;
+  --down-fill: #c8433c;
+  --down-ink: #a92e28;
+  --down-border: #e8b7b4;
+  --down-tint: #fdf3f2;
+
+  --info-ink: #2c6bab;
+  --accent-purple: #7a4fc0;
+
+  --miss: #c3cbd4;
+  --portrait-stripe-a: #eef1f5;
+  --portrait-stripe-b: #e4e8ee;
+  --shield-silver: linear-gradient(160deg, #dfe5ea, #97a3ae);
+  --shield-bronze: linear-gradient(160deg, #d69c6f, #9d6a41);
+
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------- @theme ---
+   Exposes the tokens to Tailwind so bg-surface-panel / text-gold-ink /
+   font-display / tracking-eyebrow all work as utilities.
+   ------------------------------------------------------------------------ */
+
+@theme inline {
+  --color-surface-page: var(--surface-page);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-panel-alt: var(--surface-panel-alt);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-header: var(--surface-header);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-line-hairline: var(--border-hairline);
+
+  --color-rail-top: var(--rail-top);
+  --color-rail-bottom: var(--rail-bottom);
+  --color-rail-text: var(--rail-text);
+  --color-rail-label: var(--rail-label);
+  --color-rail-border: var(--rail-border);
+
+  --color-ink: var(--text);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-faint: var(--text-faint);
+  --color-ink-disabled: var(--text-disabled);
+
+  --color-gold-ink: var(--gold-ink);
+  --color-gold-border: var(--gold-border);
+  --color-gold-tint: var(--gold-tint);
+  --color-on-gold: var(--on-gold);
+  --color-up-fill: var(--up-fill);
+  --color-up-ink: var(--up-ink);
+  --color-down-fill: var(--down-fill);
+  --color-down-ink: var(--down-ink);
+  --color-down-border: var(--down-border);
+  --color-down-tint: var(--down-tint);
+  --color-info-ink: var(--info-ink);
+  --color-accent-purple: var(--accent-purple);
+  --color-discord: var(--discord);
+  --color-miss: var(--miss);
+
+  --font-display: "Barlow Condensed", system-ui, sans-serif;
+  --font-sans: "Barlow", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --tracking-eyebrow: .16em;
+  --tracking-pill: .1em;
+  --tracking-title: .02em;
+  --tracking-heading: .045em;
+
+  --radius-frame: 6px;
+  --radius-card: 5px;
+  --radius-control: 4px;
+  --radius-pill: 3px;
+  --radius-block: 2px;
+
+  --shadow-frame: var(--shadow-frame);
+}
+
+body {
+  background: var(--surface-page);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus ring is instant and never removed. */
+:focus-visible {
+  outline: 2px solid var(--gold-ink);
+  outline-offset: 2px;
+}
+
+/* @layer base, not a bare rule -- Tailwind v4's own utility classes live in
+   @layer utilities, and an UNLAYERED rule beats every layered one
+   regardless of specificity or source order. Written bare, this default
+   link colour would win over every text-* utility a component puts on an
+   <a>/<Link> (confirmed: it was doing exactly that to the sidebar's
+   inactive nav links, forcing them all gold instead of --rail-text).
+   Inside @layer base, Tailwind's utilities correctly override it again. */
+@layer base {
+  a { color: var(--gold-ink); text-decoration: none; }
+  a:hover { color: var(--text); }
+}
+
+/* ------------------------------------------------------------ keyframes ---
+   Six, and no more. Motion Spec.dc.html runs every one of them live.
+   ------------------------------------------------------------------------ */
+
+@keyframes pcPulse    { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes pcSweep    { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+@keyframes pcPop      { 0% { transform: scale(1); } 45% { transform: scale(1.14); } 100% { transform: scale(1); } }
+@keyframes pcFade     { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pcSlideIn  { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes pcRowFlash { 0% { background: rgba(201, 162, 39, .26); } 100% { background: rgba(201, 162, 39, 0); } }
+
+/* Three pulse speeds only — they encode urgency. */
+.pulse-live   { animation: pcPulse 1.6s ease-in-out infinite; }
+.pulse-online { animation: pcPulse 2s ease-in-out infinite; }
+.pulse-skel   { animation: pcPulse 1.2s ease-in-out infinite; }
+
+/* Sweep: 30%-wide child of an overflow-hidden panel. Dark mode only. */
+.sweep {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(59, 110, 165, .16), transparent);
+  animation: pcSweep 6s linear infinite;
+}
+.sweep-pb {
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgba(79, 191, 139, .16), transparent);
+  animation-duration: 4s;
+}
+@media (max-width: 767px) { .sweep-pb { animation-duration: 3.2s; } }
+/* Dark mode only -- same override logic as the tokens above, so an
+   explicit toggle pick (not just the OS setting) decides this too. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .sweep,
+  :root:not([data-theme="dark"]) .sweep-pb { display: none; }
+}
+:root[data-theme="light"] .sweep,
+:root[data-theme="light"] .sweep-pb { display: none; }
+
+.route-content { animation: pcFade var(--motion-enter) ease both; }
+.shield-pop    { animation: pcPop var(--motion-bounce) var(--ease-bounce) both; }
+.row-flash     { animation: pcRowFlash var(--motion-flash) ease-out both; }
+.drawer        { animation: pcSlideIn var(--motion-drawer) var(--ease-drawer) both; }
+.drawer-out    { animation: pcSlideIn 180ms var(--ease-drawer) reverse both; }
+
+/* Every animated element carries its meaning in text and colour too, so
+   nothing is lost when motion is off. */
+@media (prefers-reduced-motion: reduce) {
+  .sweep, .sweep-pb { display: none; }
+  .shield-pop, .route-content, .drawer, .drawer-out,
+  .row-flash, [class*="pulse"] { animation: none !important; }
+  .route-content { opacity: 1; transform: none; }
+  .pulse-live, .pulse-online { opacity: .7; }
+  * { transition-duration: 80ms !important; }
+}

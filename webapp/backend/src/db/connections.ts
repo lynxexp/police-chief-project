@@ -231,6 +231,15 @@ const EXPECTED: ExpectedTable[] = [
     ],
   },
   {
+    db: allianceRaw,
+    file: "alliance.sqlite",
+    table: "alliance_goals",
+    columns: [
+      "alliance_id", "metric", "target", "cycle_kind", "starts_on",
+      "ends_on", "repeats", "visibility", "created_by", "created_at",
+    ],
+  },
+  {
     db: settingsRaw,
     file: "settings.sqlite",
     table: "admin",

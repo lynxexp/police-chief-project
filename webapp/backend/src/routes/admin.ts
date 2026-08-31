@@ -102,6 +102,20 @@ const channelSettingsBody = {
   },
 } as const;
 
+const allianceGoalBody = {
+  type: "object",
+  required: ["metric", "target", "cycleKind", "startsOn"],
+  properties: {
+    metric: { type: "string", enum: ["vault", "capitol", "turnout", "perfect"] },
+    target: { type: "integer", minimum: 1 },
+    cycleKind: { type: "string", enum: ["window", "monthly", "rolling7"] },
+    startsOn: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+    endsOn: { anyOf: [{ type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, { type: "null" }] },
+    repeats: { type: "boolean" },
+    visibility: { type: "string", enum: ["everyone", "officers"] },
+  },
+} as const;
+
 const settableTiers: readonly Tier[] = [TIER_GLOBAL, TIER_SERVER, TIER_ALLIANCE];
 
 const addAdminBody = {
@@ -391,6 +405,68 @@ export default async function adminRoutes(fastify: FastifyInstance): Promise<voi
           .execute();
       }
       return { ok: true };
+    },
+  );
+
+  fastify.put<{
+    Params: { allianceId: number };
+    Body: {
+      metric: string;
+      target: number;
+      cycleKind: string;
+      startsOn: string;
+      endsOn?: string | null;
+      repeats?: boolean;
+      visibility?: string;
+    };
+  }>(
+    "/admin/alliances/:allianceId/goal",
+    { schema: { params: allianceIdParam, body: allianceGoalBody }, preHandler: fastify.csrfProtection },
+    async (request, reply) => {
+      const ctx = request.authContext!;
+      const { allianceId } = request.params;
+      if (!(await canManageAlliance(ctx.discordId, effectiveGuildId(ctx), allianceId))) {
+        return reply.code(403).send({ error: "not_alliance_admin" });
+      }
+
+      const b = request.body;
+      const values = {
+        metric: b.metric,
+        target: b.target,
+        cycle_kind: b.cycleKind,
+        starts_on: b.startsOn,
+        ends_on: b.endsOn ?? null,
+        repeats: b.repeats ? 1 : 0,
+        visibility: b.visibility ?? "everyone",
+        created_by: ctx.discordId,
+        created_at: new Date().toISOString(),
+      };
+
+      const existing = await allianceDb
+        .selectFrom("alliance_goals")
+        .select("alliance_id")
+        .where("alliance_id", "=", allianceId)
+        .executeTakeFirst();
+      if (existing) {
+        await allianceDb.updateTable("alliance_goals").set(values).where("alliance_id", "=", allianceId).execute();
+      } else {
+        await allianceDb.insertInto("alliance_goals").values({ alliance_id: allianceId, ...values }).execute();
+      }
+      return { ok: true };
+    },
+  );
+
+  fastify.delete<{ Params: { allianceId: number } }>(
+    "/admin/alliances/:allianceId/goal",
+    { schema: { params: allianceIdParam }, preHandler: fastify.csrfProtection },
+    async (request, reply) => {
+      const ctx = request.authContext!;
+      const { allianceId } = request.params;
+      if (!(await canManageAlliance(ctx.discordId, effectiveGuildId(ctx), allianceId))) {
+        return reply.code(403).send({ error: "not_alliance_admin" });
+      }
+      await allianceDb.deleteFrom("alliance_goals").where("alliance_id", "=", allianceId).execute();
+      return reply.code(204).send();
     },
   );
 

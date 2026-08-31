@@ -1,13 +1,38 @@
 import { Link, useLocation, useParams } from "react-router-dom";
+import type { ComponentType } from "react";
+import {
+  UserRound,
+  Gift,
+  Gauge,
+  Trophy,
+  CalendarCheck,
+  CalendarDays,
+  UsersRound,
+  Flag,
+  Hash,
+  Bell,
+  Palette,
+  KeyRound,
+  ScrollText,
+  Activity,
+  DatabaseBackup,
+  ClipboardList,
+  Calculator,
+} from "lucide-react";
 import type { AuthContext } from "../api/client";
 
 interface NavItem {
   to: string;
   label: string;
-  icon: string;
+  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
   /** Defaults to prefix-match; set exact for items whose path is a
    * prefix of another item's (e.g. "/" vs "/alliance/1"). */
   exact?: boolean;
+  /** Unread-count style trailing pill (e.g. gift codes). Left unwired for
+   * now -- no cheap existing data source without a dedicated query, and
+   * the ground rule here is never invent a number. The slot exists so
+   * wiring one later is additive, not a restructure. */
+  badge?: number;
 }
 
 interface NavSection {
@@ -21,22 +46,32 @@ function isActive(pathname: string, item: NavItem): boolean {
 }
 
 function NavLink({ item, active, onNavigate }: { item: NavItem; active: boolean; onNavigate: () => void }) {
+  const Icon = item.icon;
   return (
     <Link
       to={item.to}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+      className={`flex items-center gap-2.5 rounded-control px-2.5 py-2.5 font-sans text-sm transition-colors duration-[var(--motion-fast)] ${
         active
-          ? "bg-indigo-500/15 font-medium text-indigo-300"
-          : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+          ? "border-l-[3px] border-[#C9A227] bg-[rgba(201,162,39,.14)] font-semibold text-gold-ink"
+          : "border-l-[3px] border-transparent text-rail-text hover:bg-white/[.04] hover:text-ink-secondary"
       }`}
     >
-      <span className="w-5 shrink-0 text-center" aria-hidden="true">
-        {item.icon}
-      </span>
-      <span className="truncate">{item.label}</span>
+      <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.badge ? (
+        <span className="shrink-0 rounded-pill bg-down-fill px-1.5 py-0.5 font-mono text-[11px] font-bold text-white">
+          {item.badge}
+        </span>
+      ) : null}
     </Link>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <div className="mb-1.5 px-2 font-mono text-[10px] tracking-eyebrow text-rail-label uppercase">{children}</div>
   );
 }
 
@@ -45,7 +80,9 @@ function NavLink({ item, active, onNavigate }: { item: NavItem; active: boolean;
  * visitors (including on /login itself) AND folded into the logged-in
  * sidebar's top section below, so this list is the one place to add the
  * next one rather than two. */
-const PUBLIC_TOOLS: NavItem[] = [{ to: "/electro-building-calculator", label: "Electro Building Calculator", icon: "🏗️" }];
+const PUBLIC_TOOLS: NavItem[] = [
+  { to: "/electro-building-calculator", label: "Electro Building Calculator", icon: Calculator },
+];
 
 /** Sidebar nav content, shared by the desktop rail and the mobile drawer.
  * Builds its own section list from route params + auth tier rather than
@@ -59,10 +96,8 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; o
     return (
       <nav className="flex h-full flex-col gap-5 overflow-y-auto px-3 py-4">
         <div>
-          <div className="mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Free tools
-          </div>
-          <div className="flex flex-col gap-0.5">
+          <SectionLabel>Free tools</SectionLabel>
+          <div className="flex flex-col gap-[3px]">
             {PUBLIC_TOOLS.map((item) => (
               <NavLink key={item.to} item={item} active={isActive(location.pathname, item)} onNavigate={onNavigate} />
             ))}
@@ -77,8 +112,8 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; o
   const sections: NavSection[] = [
     {
       items: [
-        { to: "/", label: "Your profile", icon: "👤", exact: true },
-        { to: "/gift-codes", label: "Gift codes", icon: "🎁" },
+        { to: "/", label: "Your profile", icon: UserRound, exact: true },
+        { to: "/gift-codes", label: "Gift codes", icon: Gift },
         ...PUBLIC_TOOLS,
       ],
     },
@@ -88,10 +123,10 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; o
     sections.push({
       heading: "This alliance",
       items: [
-        { to: `/alliance/${allianceId}`, label: "Overview", icon: "📊", exact: true },
-        { to: `/alliance/${allianceId}/leaderboard/vault`, label: "Leaderboard", icon: "🏆" },
-        { to: `/alliance/${allianceId}/attendance/vault`, label: "Attendance", icon: "✅" },
-        { to: `/alliance/${allianceId}/calendar`, label: "Calendar", icon: "📅" },
+        { to: `/alliance/${allianceId}`, label: "Overview", icon: Gauge, exact: true },
+        { to: `/alliance/${allianceId}/leaderboard/vault`, label: "Leaderboard", icon: Trophy },
+        { to: `/alliance/${allianceId}/attendance/vault`, label: "Attendance", icon: CalendarCheck },
+        { to: `/alliance/${allianceId}/calendar`, label: "Calendar", icon: CalendarDays },
       ],
     });
 
@@ -99,30 +134,30 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; o
       sections.push({
         heading: "Manage this alliance",
         items: [
-          { to: `/admin/alliances/${allianceId}/members`, label: "Members", icon: "👥" },
-          { to: `/admin/alliances/${allianceId}/settings`, label: "Channel setup", icon: "⚙️" },
-          { to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications", icon: "🔔" },
-          { to: `/admin/alliances/${allianceId}/custom-events`, label: "Custom events", icon: "🗓️" },
-          { to: `/admin/alliances/${allianceId}/schedule-boards`, label: "Schedule boards", icon: "📋" },
+          { to: `/admin/alliances/${allianceId}/members`, label: "Members", icon: UsersRound },
+          { to: `/admin/alliances/${allianceId}/settings`, label: "Channel setup", icon: Hash },
+          { to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications", icon: Bell },
+          { to: `/admin/alliances/${allianceId}/custom-events`, label: "Custom events", icon: CalendarDays },
+          { to: `/admin/alliances/${allianceId}/schedule-boards`, label: "Schedule boards", icon: ClipboardList },
         ],
       });
     }
   }
 
   if (isAdmin) {
-    const adminItems: NavItem[] = [{ to: "/admin", label: "All alliances", icon: "🏛️", exact: true }];
+    const adminItems: NavItem[] = [{ to: "/admin", label: "All alliances", icon: Flag, exact: true }];
     if (ctx.isGlobal) {
       adminItems.push(
-        { to: "/admin/permissions", label: "Manage admins", icon: "🛡️" },
-        { to: "/admin/permissions/audit-log", label: "Audit log", icon: "📜" },
-        { to: "/admin/gift-codes", label: "Gift codes (admin)", icon: "🎁" },
-        { to: "/admin/themes", label: "Themes", icon: "🎨" },
+        { to: "/admin/permissions", label: "Manage admins", icon: KeyRound },
+        { to: "/admin/permissions/audit-log", label: "Audit log", icon: ScrollText },
+        { to: "/admin/gift-codes", label: "Gift codes (admin)", icon: Gift },
+        { to: "/admin/themes", label: "Themes", icon: Palette },
       );
     }
     if (ctx.isOwner) {
       adminItems.push(
-        { to: "/admin/backups", label: "Backups", icon: "💾" },
-        { to: "/admin/system", label: "System Health", icon: "🖥️" },
+        { to: "/admin/backups", label: "Backups", icon: DatabaseBackup },
+        { to: "/admin/system", label: "System Health", icon: Activity },
       );
     }
     sections.push({ heading: "Admin", items: adminItems });
@@ -132,12 +167,8 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; o
     <nav className="flex h-full flex-col gap-5 overflow-y-auto px-3 py-4">
       {sections.map((section, i) => (
         <div key={i}>
-          {section.heading && (
-            <div className="mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              {section.heading}
-            </div>
-          )}
-          <div className="flex flex-col gap-0.5">
+          {section.heading && <SectionLabel>{section.heading}</SectionLabel>}
+          <div className="flex flex-col gap-[3px]">
             {section.items.map((item) => (
               <NavLink key={item.to} item={item} active={isActive(location.pathname, item)} onNavigate={onNavigate} />
             ))}

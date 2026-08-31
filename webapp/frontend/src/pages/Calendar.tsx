@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useOutletContext, useParams } from "react-router-dom";
+import { CalendarPlus } from "lucide-react";
 import Layout from "../components/Layout";
 import {
   getAllianceCalendar,
@@ -106,106 +107,43 @@ export default function CalendarPage() {
   const monthLabel = viewMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const selectedEvents = selectedDateKey ? (eventsByDate.get(selectedDateKey) ?? []) : [];
 
-  return (
-    <Layout
-      title="Event calendar"
-      backTo={{ to: `/alliance/${allianceId}`, label: "Alliance overview" }}
-      actions={
-        ctx.tier !== "none" && (
-          <Link
-            to={`/admin/alliances/${allianceId}/custom-events/new`}
-            className="inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-          >
-            + New event
-          </Link>
-        )
-      }
-    >
-      {calendarQuery.data && !calendarQuery.data.guildId && (
-        <p className="mb-4 text-slate-400">This alliance has no linked Discord server.</p>
-      )}
+  const subscribeCard = (
+    <Card>
+      <p className="mb-1 font-display text-[17px] font-semibold tracking-heading text-ink uppercase">Subscribe</p>
+      <p className="mb-4 text-xs text-ink-muted">
+        Sync upcoming events to your phone or computer's own calendar app, with its normal reminders. The link
+        below is personal to you.
+      </p>
 
-      {ctx.tier !== "none" && (
-        <p className="mb-4 -mt-2 text-xs text-slate-500">
-          Events on this calendar come from Custom Events and Notifications, configured here.
-        </p>
+      {!showSubscribe && (
+        <button onClick={() => setShowSubscribe(true)} className={`${buttonPrimary} w-full`}>
+          <CalendarPlus size={16} strokeWidth={1.75} className="mr-1.5" aria-hidden="true" />
+          One-click subscribe (webcal)
+        </button>
       )}
-
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          onClick={() => {
-            setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
-            setSelectedDateKey(null);
-          }}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
-          ← Prev
-        </button>
-        <span className="min-w-[10rem] text-center text-sm font-medium">{monthLabel}</span>
-        <button
-          onClick={() => {
-            setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
-            setSelectedDateKey(null);
-          }}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
-          Next →
-        </button>
-        <button
-          onClick={() => {
-            setViewMonth(startOfMonth(new Date()));
-            setSelectedDateKey(null);
-          }}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-        >
-          Today
-        </button>
-        {calendarQuery.isFetching && <span className="text-xs text-slate-500">Loading…</span>}
-        <button
-          onClick={() => setShowSubscribe((v) => !v)}
-          className={`${buttonSecondary} ml-auto`}
-        >
-          📅 Subscribe on your device
-        </button>
-      </div>
 
       {showSubscribe && (
-        <Card className="mb-4">
-          <h2 className="mb-1 text-sm font-medium text-slate-300">Add this calendar to your device</h2>
-          <p className="mb-4 text-xs text-slate-500">
-            Subscribing keeps upcoming events synced to your phone or computer's own calendar app, so you can use
-            its normal reminder/alert features. The link below is personal to you — don't share it.
-          </p>
-
-          {feedTokenQuery.isLoading && <p className="text-sm text-slate-500">Loading your subscribe link…</p>}
-          {feedTokenQuery.error && <ErrorState message="Couldn't load your subscribe link." />}
+        <div className="flex flex-col gap-3">
+          {feedTokenQuery.isLoading && <p className="text-sm text-ink-muted">Loading your subscribe link…</p>}
+          {feedTokenQuery.error && <ErrorState message="Couldn't load your subscribe link." onRetry={feedTokenQuery.refetch} />}
 
           {feedUrl && webcalUrl && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <a href={webcalUrl} className={buttonPrimary}>
-                  Add to Apple Calendar / Outlook
-                </a>
-                <button onClick={copyFeedUrl} className={buttonSecondary}>
-                  {copiedUrl === feedUrl ? "Copied!" : "Copy link for Google Calendar"}
-                </button>
-              </div>
-
-              <div>
-                <p className="mb-1 text-xs text-slate-500">
-                  Google Calendar doesn't support one-click subscribe links — open Google Calendar, go to{" "}
-                  <span className="text-slate-400">Other calendars → From URL</span>, and paste the copied link.
-                </p>
-                <input
-                  ref={feedUrlInputRef}
-                  readOnly
-                  value={feedUrl}
-                  onFocus={(e) => e.currentTarget.select()}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-400"
-                />
-              </div>
-
-              <div className="border-t border-slate-800 pt-3">
+            <>
+              <a href={webcalUrl} className={`${buttonPrimary} text-center`}>
+                Add to Apple Calendar / Outlook
+              </a>
+              <button onClick={copyFeedUrl} className={buttonSecondary}>
+                {copiedUrl === feedUrl ? "Copied!" : "Copy link for Google Calendar"}
+              </button>
+              <input
+                ref={feedUrlInputRef}
+                readOnly
+                value={feedUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className="w-full truncate rounded-control border border-line bg-surface-sunken px-3 py-1.5 font-mono text-xs text-ink-muted"
+              />
+              <p className="text-xs text-down-ink">
+                This link is personal to you — don't share it.{" "}
                 <button
                   onClick={() => {
                     if (
@@ -217,97 +155,177 @@ export default function CalendarPage() {
                     }
                   }}
                   disabled={regenerateTokenMutation.isPending}
-                  className={buttonSecondary}
+                  className="font-medium text-ink-secondary underline hover:text-ink"
                 >
                   {regenerateTokenMutation.isPending ? "Generating…" : "Generate new link"}
                 </button>
-              </div>
-            </div>
+              </p>
+            </>
           )}
-        </Card>
-      )}
-
-      {calendarQuery.error && (
-        <div className="mb-4">
-          <ErrorState message="Couldn't load the calendar." />
         </div>
       )}
+    </Card>
+  );
 
-      <div className="grid grid-cols-7 gap-1 text-xs">
-        {WEEKDAY_HEADERS.map((d) => (
-          <div key={d} className="px-2 py-1 text-center font-medium text-slate-500">
-            {d}
+  const dayPanel = selectedDateKey && (
+    <Card>
+      <p className="mb-3 font-mono text-sm font-bold text-gold-ink uppercase">
+        {new Date(`${selectedDateKey}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+      </p>
+      {selectedEvents.length === 0 ? (
+        <p className="text-sm text-ink-muted">No events this day.</p>
+      ) : (
+        <ul className="flex flex-col gap-2.5">
+          {selectedEvents.map((e) => (
+            <li key={e.id} className="flex items-start gap-2.5 text-sm">
+              <span
+                className="mt-1 h-1 w-1 shrink-0 rounded-full"
+                style={{ background: e.isPast ? "var(--text-faint)" : "var(--info-ink)" }}
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <p className={e.isPast ? "text-ink-faint" : "text-ink"}>
+                  {e.icon} {e.name}
+                </p>
+                <p className="font-mono text-xs text-ink-muted">
+                  {new Date(e.time).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+              {e.isPast && <Badge>Past</Badge>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+
+  return (
+    <Layout
+      title="Event calendar"
+      backTo={{ to: `/alliance/${allianceId}`, label: "Alliance overview" }}
+      actions={
+        ctx.tier !== "none" && (
+          <Link to={`/admin/alliances/${allianceId}/custom-events/new`} className={buttonPrimary}>
+            + New event
+          </Link>
+        )
+      }
+    >
+      {calendarQuery.data && !calendarQuery.data.guildId && (
+        <p className="text-sm text-ink-muted">This alliance has no linked Discord server.</p>
+      )}
+      {ctx.tier !== "none" && (
+        <p className="text-xs text-ink-faint">
+          Events on this calendar come from Custom Events and Notifications, configured here.
+        </p>
+      )}
+      {calendarQuery.error && <ErrorState message="Couldn't load the calendar." onRetry={calendarQuery.refetch} />}
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <button onClick={() => { setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1)); setSelectedDateKey(null); }} className={buttonSecondary}>
+              ← Prev
+            </button>
+            <span className="min-w-[9rem] text-center font-display text-sm font-semibold tracking-heading text-ink uppercase">{monthLabel}</span>
+            <button onClick={() => { setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1)); setSelectedDateKey(null); }} className={buttonSecondary}>
+              Next →
+            </button>
+            <button onClick={() => { setViewMonth(startOfMonth(new Date())); setSelectedDateKey(null); }} className={buttonSecondary}>
+              Today
+            </button>
+            {calendarQuery.isFetching && <span className="font-mono text-[11px] text-ink-faint">loading…</span>}
           </div>
-        ))}
-        {grid.map((day) => {
-          const key = toLocalDateKey(day);
-          const inMonth = day.getMonth() === viewMonth.getMonth();
-          const dayEvents = eventsByDate.get(key) ?? [];
-          const isToday = key === todayKey;
-          const isSelected = key === selectedDateKey;
-          return (
-            <button
-              key={key}
-              onClick={() => setSelectedDateKey(key === selectedDateKey ? null : key)}
-              className={`flex min-h-[4.5rem] flex-col rounded-md border p-1.5 text-left transition-colors ${
-                isSelected
-                  ? "border-indigo-500 bg-indigo-950/40"
-                  : "border-slate-800 bg-slate-900 hover:border-slate-700"
-              } ${!inMonth ? "opacity-40" : ""}`}
-            >
-              <span className={`text-xs ${isToday ? "font-semibold text-indigo-400" : "text-slate-400"}`}>
-                {day.getDate()}
-              </span>
-              <div className="mt-1 flex flex-1 flex-col gap-0.5 overflow-hidden">
-                {dayEvents.slice(0, 3).map((e) => (
+
+          {/* Desktop month grid */}
+          <div className="hidden gap-[1px] overflow-hidden rounded-card border border-line bg-line-hairline sm:grid sm:grid-cols-7">
+            {WEEKDAY_HEADERS.map((d) => (
+              <div key={d} className="bg-surface-header px-2 py-1.5 text-center font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">
+                {d}
+              </div>
+            ))}
+            {grid.map((day) => {
+              const key = toLocalDateKey(day);
+              const inMonth = day.getMonth() === viewMonth.getMonth();
+              const dayEvents = eventsByDate.get(key) ?? [];
+              const isToday = key === todayKey;
+              const isSelected = key === selectedDateKey;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSelectedDateKey(key === selectedDateKey ? null : key)}
+                  className={`flex min-h-[92px] flex-col p-2 text-left ${
+                    isToday ? "border border-gold-border bg-gold-tint" : inMonth ? "bg-surface-panel" : "bg-surface-header"
+                  } ${isSelected ? "outline outline-2 outline-gold-ink" : ""}`}
+                >
                   <span
-                    key={e.id}
-                    className={`truncate rounded px-1 text-[10px] ${
-                      e.isPast ? "bg-slate-800 text-slate-500" : "bg-indigo-900/60 text-indigo-200"
+                    className={`font-mono text-xs ${
+                      isToday ? "font-bold text-gold-ink" : inMonth ? "text-ink-muted" : "text-ink-disabled"
                     }`}
                   >
-                    {e.icon} {e.name}
+                    {isToday ? `${day.getDate()} · TODAY` : day.getDate()}
                   </span>
-                ))}
-                {dayEvents.length > 3 && (
-                  <span className="text-[10px] text-slate-500">+{dayEvents.length - 3} more</span>
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {selectedDateKey && (
-        <Card className="mt-6">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">
-            {new Date(`${selectedDateKey}T00:00:00`).toLocaleDateString(undefined, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
+                  <div className="mt-1 flex flex-1 flex-col gap-0.5 overflow-hidden">
+                    {dayEvents.slice(0, 3).map((e) => (
+                      <span
+                        key={e.id}
+                        className="truncate rounded-block px-1 py-0.5 text-[10px]"
+                        style={{
+                          background: isToday ? "linear-gradient(180deg, var(--gold-fill-from), var(--gold-fill-to))" : e.isPast ? "#1A2430" : "#1D2A38",
+                          color: isToday ? "var(--on-gold)" : e.isPast ? "var(--text-muted)" : "var(--text-secondary)",
+                          borderLeft: !isToday && !e.isPast ? "2px solid var(--info-ink)" : undefined,
+                        }}
+                      >
+                        {e.icon} {e.name}
+                      </span>
+                    ))}
+                    {dayEvents.length > 3 && <span className="text-[10px] text-ink-faint">+{dayEvents.length - 3} more</span>}
+                  </div>
+                </button>
+              );
             })}
-          </h2>
-          {selectedEvents.length === 0 ? (
-            <p className="text-sm text-slate-500">No events this day.</p>
-          ) : (
-            <ul className="space-y-2">
-              {selectedEvents.map((e) => (
-                <li key={e.id} className="flex items-center gap-3 text-sm">
-                  <span
-                    className={`w-14 shrink-0 text-xs ${e.isPast ? "text-slate-500" : "text-slate-400"}`}
-                  >
-                    {new Date(e.time).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                  <span>{e.icon}</span>
-                  <span className={e.isPast ? "text-slate-400" : "text-slate-200"}>{e.name}</span>
-                  {e.isPast && <Badge>Past</Badge>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      )}
+          </div>
+
+          {/* Mobile: dot grid */}
+          <div className="grid grid-cols-7 gap-1 sm:hidden">
+            {WEEKDAY_HEADERS.map((d) => (
+              <div key={d} className="text-center font-mono text-[10px] text-ink-faint uppercase">{d[0]}</div>
+            ))}
+            {grid.map((day) => {
+              const key = toLocalDateKey(day);
+              const inMonth = day.getMonth() === viewMonth.getMonth();
+              const dayEvents = eventsByDate.get(key) ?? [];
+              const isToday = key === todayKey;
+              const isSelected = key === selectedDateKey;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSelectedDateKey(key === selectedDateKey ? null : key)}
+                  className={`flex h-11 w-11 flex-col items-center justify-center rounded-control ${
+                    isSelected ? "border border-gold-border bg-gold-tint" : ""
+                  } ${!inMonth ? "opacity-40" : ""}`}
+                >
+                  <span className={`font-mono text-xs ${isToday ? "font-bold text-gold-ink" : "text-ink-secondary"}`}>{day.getDate()}</span>
+                  {dayEvents.length > 0 && (
+                    <span
+                      className="mt-0.5 h-[5px] w-[5px] rounded-full"
+                      style={{ background: isToday ? "var(--gold-ink)" : dayEvents.some((e) => !e.isPast) ? "var(--info-ink)" : "var(--border-strong)" }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 sm:hidden">{dayPanel}</div>
+        </div>
+
+        <div className="hidden flex-col gap-4 lg:flex">
+          {dayPanel}
+          {subscribeCard}
+        </div>
+        <div className="lg:hidden">{subscribeCard}</div>
+      </div>
     </Layout>
   );
 }

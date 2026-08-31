@@ -1008,6 +1008,24 @@ if __name__ == "__main__":
             if "tag" not in existing_cols:
                 conn_alliance.execute("ALTER TABLE alliance_list ADD COLUMN tag TEXT")
 
+            # Web dashboard's alliance-goal panel: one live row per alliance
+            # per cycle. Progress is never stored here -- it's summed from
+            # the alliance's own vault/capitol session data at read time, so
+            # it can never disagree with the leaderboard (see
+            # webapp/backend/src/routes/member.ts's alliance-goal route).
+            conn_alliance.execute("""CREATE TABLE IF NOT EXISTS alliance_goals (
+                alliance_id INTEGER PRIMARY KEY,
+                metric TEXT NOT NULL,
+                target INTEGER NOT NULL,
+                cycle_kind TEXT NOT NULL,
+                starts_on TEXT NOT NULL,
+                ends_on TEXT,
+                repeats INTEGER DEFAULT 0,
+                visibility TEXT DEFAULT 'everyone',
+                created_by INTEGER,
+                created_at TEXT
+            )""")
+
     raise_open_file_limit()
     create_tables()
     startup.phase_ok("Database ready")

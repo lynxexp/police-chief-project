@@ -10,7 +10,7 @@ import {
   exchangeCodeForToken,
   fetchDiscordUser,
 } from "../auth/oauth.js";
-import { createSession, destroySession, setActiveGuild } from "../auth/session.js";
+import { createSession, destroySession, setActiveGuild, getValidAccessToken } from "../auth/session.js";
 import {
   setPkceCookie,
   readPkceCookie,
@@ -110,6 +110,28 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       // an in-flight form.
       const csrfToken = await reply.generateCsrf();
       return { ...ctx, csrfToken };
+    },
+  );
+
+  fastify.get(
+    "/me/display-name",
+    { preHandler: fastify.requireAuth },
+    async (request, reply) => {
+      // Split out of GET /me on purpose: that endpoint is polled on every
+      // page mount/focus (staleTime 0) and is also what every admin-route
+      // preHandler resolves per request via resolveAuthContext -- baking a
+      // live Discord call into it would put a Discord round-trip (and its
+      // rate limit) on nearly every request the app makes. This one is
+      // fetched once per session by the client instead (long staleTime),
+      // and uses the caller's own OAuth token, not the shared bot token,
+      // so it never competes with the bot's own Discord API usage.
+      try {
+        const accessToken = await getValidAccessToken(request.session!.id);
+        const discordUser = await fetchDiscordUser(accessToken);
+        return { displayName: discordUser.global_name ?? discordUser.username };
+      } catch {
+        return reply.code(200).send({ displayName: null });
+      }
     },
   );
 

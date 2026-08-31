@@ -103,8 +103,15 @@ export default function DiscordEmbedPreview({
   const hexColor = `#${color.toString(16).padStart(6, "0")}`;
 
   return (
-    <div className="max-w-lg">
-      {mentionPreview && <div className="mb-1 text-sm text-slate-300">{mentionPreview}</div>}
+    <div className="max-w-lg rounded-md bg-[#313338] p-3">
+      <div className="mb-2 flex items-center gap-2.5">
+        <div className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full bg-[#5865f2] text-sm" aria-hidden="true">
+          🛡️
+        </div>
+        <span className="text-sm font-semibold text-white">Police Chief</span>
+        <span className="rounded-[3px] bg-[#5865f2] px-1 py-px text-[10px] font-medium text-white uppercase">Bot</span>
+      </div>
+      {mentionPreview && <div className="mb-1 text-sm text-[#dbdee1]">{mentionPreview}</div>}
       <div className="flex rounded-md bg-[#2b2d31] text-sm text-[#dbdee1]" style={{ fontFamily: "inherit" }}>
         <div className="w-1 shrink-0 rounded-l-md" style={{ backgroundColor: hexColor }} />
         <div className="flex min-w-0 flex-1 gap-3 p-3">

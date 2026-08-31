@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { getAllianceGuild, getCustomEvents, getCustomEventSuggestions } from "../api/client";
 import { formatUtcAndLocal } from "../utils/time";
-import { EmptyState, ErrorState, LoadingState } from "../components/ui";
+import { EmptyState, ErrorState, LoadingRows, Shield, buttonPrimary } from "../components/ui";
 
 export default function AdminCustomEvents() {
   const { allianceId: allianceIdParam } = useParams<{ allianceId: string }>();
@@ -33,33 +33,33 @@ export default function AdminCustomEvents() {
       backTo={{ to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications" }}
       actions={
         guildId && (
-          <Link
-            to={`/admin/alliances/${allianceId}/custom-events/new`}
-            className="inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-          >
+          <Link to={`/admin/alliances/${allianceId}/custom-events/new`} className={buttonPrimary}>
             + New custom event
           </Link>
         )
       }
     >
-      {guildQuery.isLoading && <LoadingState />}
-      {guildQuery.data && !guildId && (
-        <p className="text-slate-400">This alliance has no linked Discord server.</p>
-      )}
+      {guildQuery.isLoading && <LoadingRows rows={3} />}
+      {guildQuery.data && !guildId && <p className="text-sm text-ink-muted">This alliance has no linked Discord server.</p>}
 
       {suggestionsQuery.data && suggestionsQuery.data.missing.length > 0 && (
-        <div className="mb-4 space-y-2">
+        <div className="flex flex-col gap-2">
           {suggestionsQuery.data.missing.map((eventType) => (
             <div
               key={eventType}
-              className="flex items-center justify-between rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3 text-sm"
+              className="flex items-center gap-3.5 rounded-card border border-gold-border p-4"
+              style={{ background: "linear-gradient(135deg, #2A2214, var(--surface-panel))" }}
             >
-              <span className="text-amber-200">
-                {eventType} has attendance data recorded, but no reminder is set up for it.
-              </span>
+              <Shield size={40} tone="gold">
+                !
+              </Shield>
+              <p className="flex-1 text-sm text-ink-secondary">
+                <span className="font-semibold text-ink">{eventType}</span> has attendance data recorded, but no
+                reminder is set up for it.
+              </p>
               <Link
                 to={`/admin/alliances/${allianceId}/custom-events/new?prefillName=${encodeURIComponent(eventType)}`}
-                className="shrink-0 rounded-md border border-amber-700 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-900/40"
+                className="shrink-0 font-sans text-sm font-medium text-gold-ink hover:text-text"
               >
                 Create reminder →
               </Link>
@@ -68,25 +68,19 @@ export default function AdminCustomEvents() {
         </div>
       )}
 
-      {eventsQuery.isLoading && <LoadingState label="Loading events…" />}
-      {eventsQuery.error && <ErrorState message="Couldn't load custom events." />}
-      {eventsQuery.data && eventsQuery.data.length === 0 && (
-        <EmptyState icon="🗓️">No custom events configured for this server.</EmptyState>
-      )}
+      {eventsQuery.isLoading && <LoadingRows rows={4} />}
+      {eventsQuery.error && <ErrorState message="Couldn't load custom events." onRetry={eventsQuery.refetch} />}
+      {eventsQuery.data && eventsQuery.data.length === 0 && <EmptyState>No custom events configured for this server.</EmptyState>}
 
       {eventsQuery.data && eventsQuery.data.length > 0 && (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {eventsQuery.data.map((e) => (
-            <Link
-              key={e.id}
-              to={`/admin/alliances/${allianceId}/custom-events/${e.id}`}
-              className="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-slate-700"
-            >
-              <div className="flex items-center gap-2 font-medium">
-                <span>{e.iconUrl || "📅"}</span>
+            <Link key={e.id} to={`/admin/alliances/${allianceId}/custom-events/${e.id}`} className="block rounded-card border border-line bg-surface-panel p-4 hover:border-line-strong">
+              <div className="flex items-center gap-2 font-sans text-sm font-semibold text-ink">
+                <span aria-hidden="true">{e.iconUrl || "📅"}</span>
                 <span>{e.name}</span>
               </div>
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-ink-faint">
                 <span>
                   {e.recurrenceType ?? "?"}, every {e.recurrenceInterval ?? 1}
                 </span>

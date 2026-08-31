@@ -33,11 +33,10 @@ const RESOURCE_LABELS: { key: keyof ResourceTotal; label: string; icon: string }
 // bounded range like this (30-45): the OS numeric keyboard covers most of
 // the screen just to nudge a value by one, and native spinner arrows are
 // tiny, inconsistent across mobile browsers, and easy to mis-tap. +/-
-// buttons sized for a thumb (h-9 w-9, comfortably within Apple's 44px/CSS
-// px touch-target guidance once padding's counted) cover the common
-// "bump it up a bit" case without opening a keyboard at all; the field
-// itself stays directly editable (type="text" + inputMode="numeric" for
-// a numeric-only keypad, not type="number", so there's no inconsistent
+// buttons sized for a thumb (44px, Apple's touch-target guidance) cover
+// the common "bump it up a bit" case without opening a keyboard at all;
+// the field itself stays directly editable (type="text" + inputMode="numeric"
+// for a numeric-only keypad, not type="number", so there's no inconsistent
 // native spinner UI to fight with across browsers).
 function LevelInput({
   value,
@@ -68,7 +67,7 @@ function LevelInput({
         onClick={() => onStep(-1)}
         disabled={value <= min}
         aria-label="Decrease"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-slate-700 text-lg leading-none text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line text-lg leading-none text-ink-secondary hover:bg-white/[.04] disabled:opacity-30"
       >
         −
       </button>
@@ -84,14 +83,14 @@ function LevelInput({
           if (Number.isNaN(n)) return;
           onSetAbsolute(Math.max(min, Math.min(max, n)));
         }}
-        className="w-11 shrink-0 rounded border border-slate-700 bg-slate-950 px-1 py-1.5 text-center text-sm"
+        className="w-12 shrink-0 rounded-control border border-line bg-surface-sunken px-1 py-2 text-center font-mono text-sm text-ink"
       />
       <button
         type="button"
         onClick={() => onStep(1)}
         disabled={value >= max}
         aria-label="Increase"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-slate-700 text-lg leading-none text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line text-lg leading-none text-ink-secondary hover:bg-white/[.04] disabled:opacity-30"
       >
         +
       </button>
@@ -151,6 +150,14 @@ export default function ElectroBuildingCalculator() {
   const explicitGoalBuildings = BUILDING_NAMES.filter((n) => goalLevels[n] > currentLevels[n]);
   const buildingsNeedingWork = BUILDING_NAMES.filter((n) => requiredLevels[n] > currentLevels[n]);
 
+  // Which building's own goal is the reason a non-explicit building got
+  // pulled up -- read off the same notes resolveRequiredLevels already
+  // produced, not a second pass over the raw data.
+  function pulledUpBy(name: string): string | null {
+    const note = notes.find((n) => n.tracked && n.building === name && n.fromBuilding !== name);
+    return note ? note.fromBuilding : null;
+  }
+
   const perBuilding = buildingsNeedingWork.map((name) => ({
     name,
     from: currentLevels[name],
@@ -171,9 +178,7 @@ export default function ElectroBuildingCalculator() {
     { cash: 0, ammo: 0, electricity: 0, gas: 0, electroCores: 0, seconds: 0 },
   );
 
-  const untrackedNotes = notes.filter(
-    (n) => !n.tracked && explicitGoalOrRequiredPulledThis(n.fromBuilding),
-  );
+  const untrackedNotes = notes.filter((n) => !n.tracked && explicitGoalOrRequiredPulledThis(n.fromBuilding));
 
   function explicitGoalOrRequiredPulledThis(fromBuilding: string): boolean {
     return buildingsNeedingWork.includes(fromBuilding);
@@ -181,16 +186,15 @@ export default function ElectroBuildingCalculator() {
 
   return (
     <Layout title="Electro Building Calculator">
-      <p className="mb-4 text-sm text-slate-400">
-        Covers the 7 Electro buildings at levels 30–45 — Chief's Office, Guard Academy, Biker
-        Academy, Marksman Academy, Dispatch Center, Command Center, and Hospital. Set each
-        building's current level, then raise the <strong>Goal</strong> for whichever one(s)
-        you're planning to upgrade — if that requires another building to be higher than it
-        currently is, this adds that building's own upgrade cost in automatically and calls it
-        out below.
+      <p className="text-sm text-ink-muted">
+        Covers the 7 Electro buildings at levels 30–45 — Chief's Office, Guard Academy, Biker Academy, Marksman
+        Academy, Dispatch Center, Command Center, and Hospital. Set each building's current level, then raise the{" "}
+        <strong className="text-ink-secondary">Goal</strong> for whichever one(s) you're planning to upgrade — if
+        that requires another building to be higher than it currently is, this adds that building's own upgrade
+        cost in automatically and calls it out below.
       </p>
 
-      <Card className="mb-6">
+      <Card>
         <SectionHeading>Your buildings</SectionHeading>
 
         {/* Below sm: a stepper control per building needs more width than a
@@ -198,66 +202,51 @@ export default function ElectroBuildingCalculator() {
             version overflowed horizontally at 375px). Stacked cards give
             each building's Current/Goal controls the full row width instead. */}
         <div className="flex flex-col gap-3 sm:hidden">
-          {BUILDING_NAMES.map((name) => (
-            <div key={name} className="rounded border border-slate-800 p-3">
-              <div className="mb-2 font-medium text-slate-200">{name}</div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-slate-400">Current</span>
-                <LevelInput
-                  value={currentLevels[name]}
-                  min={MIN_LEVEL}
-                  max={MAX_LEVEL}
-                  onStep={(d) => stepCurrent(name, d)}
-                  onSetAbsolute={(v) => setCurrent(name, v)}
-                />
+          {BUILDING_NAMES.map((name) => {
+            const hasGoal = goalLevels[name] > currentLevels[name];
+            return (
+              <div
+                key={name}
+                className={`rounded-card border p-3 ${hasGoal ? "border-gold-border bg-gold-tint" : "border-line"}`}
+              >
+                <div className="mb-2 font-sans text-sm font-semibold text-ink">{name}</div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-ink-muted">Current</span>
+                  <LevelInput value={currentLevels[name]} min={MIN_LEVEL} max={MAX_LEVEL} onStep={(d) => stepCurrent(name, d)} onSetAbsolute={(v) => setCurrent(name, v)} />
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <span className="text-xs text-ink-muted">Goal</span>
+                  <LevelInput value={goalLevels[name]} min={currentLevels[name]} max={MAX_LEVEL} onStep={(d) => stepGoal(name, d)} onSetAbsolute={(v) => setGoal(name, v)} />
+                </div>
               </div>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <span className="text-xs text-slate-400">Goal</span>
-                <LevelInput
-                  value={goalLevels[name]}
-                  min={currentLevels[name]}
-                  max={MAX_LEVEL}
-                  onStep={(d) => stepGoal(name, d)}
-                  onSetAbsolute={(v) => setGoal(name, v)}
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
-            <thead className="text-left text-slate-400">
-              <tr>
+            <thead>
+              <tr className="text-left font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">
                 <th className="py-1.5 pr-3 font-medium">Building</th>
                 <th className="py-1.5 pr-3 font-medium">Current</th>
                 <th className="py-1.5 font-medium">Goal</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
-              {BUILDING_NAMES.map((name) => (
-                <tr key={name}>
-                  <td className="py-2 pr-3 text-slate-200">{name}</td>
-                  <td className="py-2 pr-3">
-                    <LevelInput
-                      value={currentLevels[name]}
-                      min={MIN_LEVEL}
-                      max={MAX_LEVEL}
-                      onStep={(d) => stepCurrent(name, d)}
-                      onSetAbsolute={(v) => setCurrent(name, v)}
-                    />
-                  </td>
-                  <td className="py-2">
-                    <LevelInput
-                      value={goalLevels[name]}
-                      min={currentLevels[name]}
-                      max={MAX_LEVEL}
-                      onStep={(d) => stepGoal(name, d)}
-                      onSetAbsolute={(v) => setGoal(name, v)}
-                    />
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-line-hairline">
+              {BUILDING_NAMES.map((name) => {
+                const hasGoal = goalLevels[name] > currentLevels[name];
+                return (
+                  <tr key={name} className={hasGoal ? "border-l-[3px] border-[#C9A227] bg-gold-tint" : undefined}>
+                    <td className="py-2 pr-3 text-ink">{name}</td>
+                    <td className="py-2 pr-3">
+                      <LevelInput value={currentLevels[name]} min={MIN_LEVEL} max={MAX_LEVEL} onStep={(d) => stepCurrent(name, d)} onSetAbsolute={(v) => setCurrent(name, v)} />
+                    </td>
+                    <td className="py-2">
+                      <LevelInput value={goalLevels[name]} min={currentLevels[name]} max={MAX_LEVEL} onStep={(d) => stepGoal(name, d)} onSetAbsolute={(v) => setGoal(name, v)} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -265,35 +254,31 @@ export default function ElectroBuildingCalculator() {
 
       {perBuilding.length === 0 ? (
         <Card>
-          <p className="text-sm text-slate-400">
-            Raise a Goal above a building's Current level to see what it costs.
-          </p>
+          <p className="text-sm text-ink-muted">Raise a Goal above a building's Current level to see what it costs.</p>
         </Card>
       ) : (
         <>
-          <Card className="mb-6">
+          <Card>
             <SectionHeading>Total resources needed</SectionHeading>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               {RESOURCE_LABELS.map(({ key, label, icon }) => (
-                <div key={key} className="rounded border border-slate-800 bg-slate-950/50 p-3 text-center">
-                  <div className="text-xs text-slate-500">
+                <div key={key} className="rounded-card border border-line bg-surface-sunken p-3 text-center">
+                  <p className="font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">
                     {icon} {label}
-                  </div>
-                  <div className="mt-1 font-mono text-lg text-slate-100">{compact(grandTotal[key])}</div>
+                  </p>
+                  <p className="mt-1 font-display text-lg font-bold text-ink">{compact(grandTotal[key])}</p>
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-xs text-slate-500">
-              Estimated build time (no speedups): {formatDuration(grandTotal.seconds)}
-            </p>
+            <p className="mt-3 text-xs text-ink-faint">Estimated build time (no speedups): {formatDuration(grandTotal.seconds)}</p>
           </Card>
 
-          <Card className="mb-6">
+          <Card>
             <SectionHeading>By building</SectionHeading>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-slate-400">
-                  <tr>
+                <thead>
+                  <tr className="text-left font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">
                     <th className="py-1.5 pr-3 font-medium">Building</th>
                     <th className="py-1.5 pr-3 font-medium">Levels</th>
                     {RESOURCE_LABELS.map(({ key, label }) => (
@@ -304,35 +289,37 @@ export default function ElectroBuildingCalculator() {
                     <th className="py-1.5 font-medium" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {perBuilding.map((b) => (
-                    <tr key={b.name}>
-                      <td className="py-2 pr-3 text-slate-200">{b.name}</td>
-                      <td className="py-2 pr-3 font-mono text-slate-400">
-                        {b.from} → {b.to}
-                      </td>
-                      {RESOURCE_LABELS.map(({ key }) => (
-                        <td key={key} className="py-2 pr-3 text-right font-mono text-slate-300">
-                          {compact(b.total[key])}
+                <tbody className="divide-y divide-line-hairline">
+                  {perBuilding.map((b, i) => {
+                    const pulledBy = !b.isExplicitGoal ? pulledUpBy(b.name) : null;
+                    return (
+                      <tr key={b.name} className={i % 2 === 1 ? "bg-surface-panel-alt" : undefined}>
+                        <td className="py-2 pr-3">
+                          <span className="text-ink">{b.name}</span>
+                          {pulledBy && <p className="text-xs text-ink-faint">pulled up by {pulledBy}'s goal</p>}
                         </td>
-                      ))}
-                      <td className="py-2">
-                        {b.isExplicitGoal ? (
-                          <Badge variant="info">Your goal</Badge>
-                        ) : (
-                          <Badge variant="warning">Required</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="py-2 pr-3 font-mono text-ink-muted">
+                          {b.from} → {b.to}
+                        </td>
+                        {RESOURCE_LABELS.map(({ key }) => (
+                          <td key={key} className="py-2 pr-3 text-right font-mono text-ink-secondary">
+                            {compact(b.total[key])}
+                          </td>
+                        ))}
+                        <td className="py-2">
+                          {b.isExplicitGoal ? <Badge variant="warning">Your goal</Badge> : <Badge variant="info">Required</Badge>}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t border-slate-700">
-                    <td className="py-2 pr-3 font-medium text-slate-200" colSpan={2}>
+                  <tr className="border-t border-line-strong">
+                    <td className="py-2 pr-3 font-semibold text-ink" colSpan={2}>
                       Total
                     </td>
                     {RESOURCE_LABELS.map(({ key }) => (
-                      <td key={key} className="py-2 pr-3 text-right font-mono font-medium text-slate-100">
+                      <td key={key} className="py-2 pr-3 text-right font-mono font-semibold text-ink">
                         {compact(grandTotal[key])}
                       </td>
                     ))}
@@ -346,11 +333,14 @@ export default function ElectroBuildingCalculator() {
           {untrackedNotes.length > 0 && (
             <Card>
               <SectionHeading>Also required (not tracked here)</SectionHeading>
-              <ul className="space-y-1 text-sm text-slate-400">
+              <ul className="flex flex-col gap-1 text-sm text-ink-muted">
                 {untrackedNotes.map((n, i) => (
                   <li key={i}>
-                    {n.fromBuilding} {n.fromLevel} needs <strong className="text-slate-200">{n.building} {n.level}</strong> —
-                    not one of the 7 Electro buildings, so its cost isn't calculated here.
+                    {n.fromBuilding} {n.fromLevel} needs{" "}
+                    <strong className="text-ink">
+                      {n.building} {n.level}
+                    </strong>{" "}
+                    — not one of the 7 Electro buildings, so its cost isn't calculated here.
                   </li>
                 ))}
               </ul>

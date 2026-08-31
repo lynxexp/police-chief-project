@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
+import { Download } from "lucide-react";
 import Layout from "../components/Layout";
-import { getVaultAttendance, getCapitolAttendance, getAllianceVaultTraps } from "../api/client";
-import { ErrorState, LoadingState } from "../components/ui";
+import { getVaultAttendance, getCapitolAttendance, getAllianceVaultTraps, type AttendanceMember } from "../api/client";
+import { AttendanceBlock, Badge, ErrorState, LoadingRows, Pill, RankShield, StatTile, buttonSecondary } from "../components/ui";
+import { attendanceBlocks, streak } from "../hooks/engagement";
 
 type Kind = "vault" | "capitol";
 
@@ -49,7 +51,7 @@ export default function Attendance() {
     enabled: kind === "vault",
   });
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["attendance", allianceId, kind, trap],
     queryFn: () => (kind === "vault" ? getVaultAttendance(allianceId, trap) : getCapitolAttendance(allianceId)),
   });
@@ -67,112 +69,163 @@ export default function Attendance() {
     downloadCsv(`attendance-${trapLabel}-${dateStr}.csv`, csv);
   }
 
+  const allianceWideTurnout =
+    data && data.members.length ? data.members.reduce((sum, m) => sum + m.attendanceRate, 0) / data.members.length : null;
+  const perfectCount = data ? data.members.filter((m) => m.attendanceRate === 1 && data.totalSessions > 0).length : 0;
+  const needsNudgeCount = data ? data.members.filter((m) => m.attendanceRate < 0.5).length : 0;
+
+  function memberChip(m: AttendanceMember) {
+    if (data && data.totalSessions === 0) return null;
+    const s = streak(m.sessions);
+    if (s.count >= 3) return <Badge variant="success">{s.count}× STREAK</Badge>;
+    if (m.attendanceRate < 0.5) return <Badge variant="danger">NEEDS A NUDGE</Badge>;
+    return null;
+  }
+
   return (
     <Layout
       title={kind === "vault" ? "Vault Trap attendance" : "Capitol War attendance"}
       backTo={{ to: `/alliance/${allianceId}`, label: "Alliance overview" }}
-    >
-      <div className="mb-4 flex gap-3 text-sm">
-        <Link
-          to={`/alliance/${allianceId}/attendance/vault`}
-          className={kind === "vault" ? "font-medium text-indigo-400" : "text-slate-400 hover:text-slate-200"}
-        >
-          Vault
-        </Link>
-        <Link
-          to={`/alliance/${allianceId}/attendance/capitol`}
-          className={kind === "capitol" ? "font-medium text-indigo-400" : "text-slate-400 hover:text-slate-200"}
-        >
-          Capitol War
-        </Link>
-      </div>
-
-      {kind === "vault" && vaultTraps.data && vaultTraps.data.length > 1 && (
-        <div className="mb-4 flex gap-2 text-xs">
-          <button
-            onClick={() => setTrap(undefined)}
-            className={`rounded-full px-3 py-1 ${
-              trap === undefined
-                ? "bg-indigo-600 text-white"
-                : "border border-slate-700 text-slate-400 hover:bg-slate-800"
-            }`}
-          >
-            Overall
-          </button>
-          {vaultTraps.data.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTrap(t)}
-              className={`rounded-full px-3 py-1 ${
-                trap === t
-                  ? "bg-indigo-600 text-white"
-                  : "border border-slate-700 text-slate-400 hover:bg-slate-800"
+      actions={
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 rounded-pill border border-line bg-surface-sunken p-1">
+            <Link
+              to={`/alliance/${allianceId}/attendance/vault`}
+              className={`rounded-pill px-3 py-1.5 font-mono text-[11px] tracking-pill uppercase ${
+                kind === "vault" ? "bg-gradient-to-b from-[var(--gold-fill-from)] to-[var(--gold-fill-to)] font-bold text-on-gold" : "text-ink-muted"
               }`}
             >
-              Vault {t}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {isLoading && <LoadingState />}
-      {error && <ErrorState message="Couldn't load attendance." />}
-
-      {data && (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm text-slate-400">
-              <span className="font-medium text-slate-200">{data.totalSessions}</span>{" "}
-              {kind === "vault" ? "hunt" : "event"}
-              {data.totalSessions === 1 ? "" : "s"} logged
-            </p>
-            <button
-              onClick={handleExport}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
+              Vault
+            </Link>
+            <Link
+              to={`/alliance/${allianceId}/attendance/capitol`}
+              className={`rounded-pill px-3 py-1.5 font-mono text-[11px] tracking-pill uppercase ${
+                kind === "capitol" ? "bg-gradient-to-b from-[var(--gold-fill-from)] to-[var(--gold-fill-to)] font-bold text-on-gold" : "text-ink-muted"
+              }`}
             >
+              Capitol War
+            </Link>
+          </div>
+          {kind === "vault" && vaultTraps.data && vaultTraps.data.length > 1 && (
+            <div className="flex gap-1.5">
+              <Pill active={trap === undefined} onClick={() => setTrap(undefined)}>
+                Overall
+              </Pill>
+              {vaultTraps.data.map((t) => (
+                <Pill key={t} active={trap === t} onClick={() => setTrap(t)}>
+                  Vault {t}
+                </Pill>
+              ))}
+            </div>
+          )}
+          {data && (
+            <button onClick={handleExport} className={buttonSecondary}>
+              <Download size={16} strokeWidth={1.75} className="mr-1.5" aria-hidden="true" />
               Export CSV
             </button>
+          )}
+        </div>
+      }
+    >
+      {isLoading && <LoadingRows rows={6} />}
+      {error && <ErrorState message="Couldn't load attendance." onRetry={refetch} />}
+
+      {data && data.totalSessions === 0 && (
+        <p className="rounded-card border border-dashed border-line-strong px-4 py-8 text-center text-sm text-ink-muted">
+          No {kind === "vault" ? "hunts" : "events"} logged{trap !== undefined ? ` for Vault ${trap}` : ""} yet.
+        </p>
+      )}
+
+      {data && data.totalSessions > 0 && (
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatTile
+              label="Alliance turnout"
+              figure={allianceWideTurnout !== null ? `${Math.round(allianceWideTurnout * 100)}%` : "—"}
+            />
+            <StatTile label="Perfect record" figure={perfectCount} inverted />
+            <div className={`flex flex-col gap-2 rounded-card border p-4 ${needsNudgeCount > 0 ? "border-down-border bg-down-tint" : "border-line bg-surface-panel"}`}>
+              <p className="font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">Needs a nudge (&lt;50%)</p>
+              <p className={`font-display text-[32px] leading-none font-bold ${needsNudgeCount > 0 ? "text-down-ink" : "text-ink"}`}>
+                {needsNudgeCount}
+              </p>
+            </div>
           </div>
-          <div className="overflow-x-auto rounded-lg border border-slate-800">
+
+          <p className="text-right font-mono text-[11px] text-ink-faint uppercase">
+            {data.totalSessions} {kind === "vault" ? "hunt" : "event"}
+            {data.totalSessions === 1 ? "" : "s"} logged
+          </p>
+
+          {/* Desktop: per-hunt block row */}
+          <div className="hidden overflow-x-auto rounded-card border border-line sm:block">
             <table className="w-full text-sm">
-              <thead className="bg-slate-900 text-left text-slate-400">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Name</th>
-                  <th className="px-4 py-2 font-medium">Attended</th>
-                  <th className="px-4 py-2 font-medium">Rate</th>
+              <thead>
+                <tr className="bg-surface-header text-left font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">
+                  <th className="px-3 py-2 font-medium">Rank</th>
+                  <th className="px-3 py-2 font-medium">Name</th>
+                  <th className="px-3 py-2 font-medium">Sessions</th>
+                  <th className="px-3 py-2 text-right font-medium">Attended</th>
+                  <th className="px-3 py-2 text-right font-medium">Rate</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
-                {data.members.map((m) => (
-                  <tr key={m.fid} className="hover:bg-slate-900/60">
-                    <td className="px-4 py-2">
-                      <Link
-                        to={`/alliance/${allianceId}/members/${m.fid}`}
-                        className="text-indigo-400 hover:text-indigo-300"
-                      >
-                        {m.nickname ?? `fid ${m.fid}`}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 text-slate-300">
-                      {m.attended} / {data.totalSessions}
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-800">
-                          <div
-                            className={`h-full ${m.attendanceRate === 0 ? "bg-slate-700" : "bg-emerald-500"}`}
-                            style={{ width: `${Math.round(m.attendanceRate * 100)}%` }}
-                          />
+              <tbody className="divide-y divide-line-hairline">
+                {data.members.map((m, i) => {
+                  const blocks = attendanceBlocks(m.sessions);
+                  return (
+                    <tr key={m.fid} className={i % 2 === 1 ? "bg-surface-panel-alt" : undefined}>
+                      <td className="px-3 py-2">{i < 3 ? <RankShield rank={i + 1} size={28} /> : <span className="font-mono text-ink-muted">{String(i + 1).padStart(2, "0")}</span>}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Link to={`/alliance/${allianceId}/members/${m.fid}`} className="text-ink hover:text-gold-ink">
+                            {m.nickname ?? `fid ${m.fid}`}
+                          </Link>
+                          {memberChip(m)}
                         </div>
-                        <span className="text-slate-400">{Math.round(m.attendanceRate * 100)}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-[2px]">
+                          {blocks.map((state, bi) => (
+                            <AttendanceBlock key={bi} state={state} />
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-ink-secondary">
+                        {m.attended} / {data.totalSessions}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-ink-secondary">{Math.round(m.attendanceRate * 100)}%</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </>
+
+          {/* Mobile: per-member cards */}
+          <div className="flex flex-col gap-2 sm:hidden">
+            {data.members.map((m) => {
+              const blocks = attendanceBlocks(m.sessions);
+              return (
+                <div key={m.fid} className="rounded-card border border-line bg-surface-panel p-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <Link to={`/alliance/${allianceId}/members/${m.fid}`} className="truncate text-sm font-medium text-ink hover:text-gold-ink">
+                      {m.nickname ?? `fid ${m.fid}`}
+                    </Link>
+                    <span className="shrink-0 font-mono text-sm text-ink-secondary">
+                      {m.attended}/{data.totalSessions} · {Math.round(m.attendanceRate * 100)}%
+                    </span>
+                  </div>
+                  {memberChip(m) && <div className="mt-1.5">{memberChip(m)}</div>}
+                  <div className="mt-2 flex gap-[3px]">
+                    {blocks.map((state, bi) => (
+                      <span key={bi} className="h-2 w-3.5 flex-none rounded-block" style={{ background: state === "attended" ? "var(--up-fill)" : state === "streak-break" ? "var(--down-fill)" : "var(--miss)" }} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
     </Layout>
   );

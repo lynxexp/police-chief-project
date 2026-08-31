@@ -4,13 +4,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { getAllianceGuild, getAllianceChannels, createNotification } from "../api/client";
 import RepeatIntervalInput from "../components/RepeatIntervalInput";
-import EmbedFieldsForm, {
-  defaultEmbedDraft,
-  embedDraftToInput,
-  isEmbedDraftValid,
-} from "../components/EmbedFieldsForm";
+import EmbedFieldsForm, { defaultEmbedDraft, embedDraftToInput, isEmbedDraftValid } from "../components/EmbedFieldsForm";
 import { defaultPlaceholderSample } from "../components/DiscordEmbedPreview";
-import { buttonPrimary } from "../components/ui";
+import { Pill, SectionHeading, buttonPrimary } from "../components/ui";
 
 const NOTIFICATION_TYPES: { value: number; label: string }[] = [
   { value: 1, label: "30, 10, 5 min before + at time" },
@@ -39,6 +35,8 @@ type MessageKind = "plain" | "embed";
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+const fieldClass = "mt-1 w-full rounded-control border border-line bg-surface-sunken px-3 py-2 text-sm text-ink";
 
 export default function AdminNotificationCreate() {
   const { allianceId: allianceIdParam } = useParams<{ allianceId: string }>();
@@ -71,12 +69,7 @@ export default function AdminNotificationCreate() {
   const [repeatMinutes, setRepeatMinutes] = useState(60);
   const [weekdays, setWeekdays] = useState<number[]>([]);
 
-  const mentionType =
-    mentionKind === "role"
-      ? `role_${mentionId}`
-      : mentionKind === "member"
-        ? `member_${mentionId}`
-        : mentionKind;
+  const mentionType = mentionKind === "role" ? `role_${mentionId}` : mentionKind === "member" ? `member_${mentionId}` : mentionKind;
 
   const toggleWeekday = (day: number) => {
     setWeekdays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
@@ -117,209 +110,123 @@ export default function AdminNotificationCreate() {
     !createMutation.isPending;
 
   return (
-    <Layout
-      title="New notification"
-      backTo={{ to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications" }}
-    >
-      {guildQuery.data && !guildId && (
-        <p className="text-slate-400">This alliance has no linked Discord server.</p>
-      )}
+    <Layout title="New notification" backTo={{ to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications" }}>
+      {guildQuery.data && !guildId && <p className="text-sm text-ink-muted">This alliance has no linked Discord server.</p>}
 
       {guildId && (
-        <div className="max-w-lg space-y-5">
-          <div className="space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Where &amp; when
-            </div>
-            <div>
-              <label className="mb-1 block text-sm text-slate-400">
-                Channel
-                <select
-                  value={channelId}
-                  onChange={(e) => setChannelId(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                >
-                  <option value="">— select a channel —</option>
-                  {channelsQuery.data?.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      #{c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+        <div className="flex max-w-2xl flex-col gap-5">
+          <div className="flex flex-col gap-3">
+            <SectionHeading>Where &amp; when</SectionHeading>
+            <label className="block">
+              <span className="text-sm text-ink-secondary">Channel</span>
+              <select value={channelId} onChange={(e) => setChannelId(e.target.value)} className={fieldClass}>
+                <option value="">Not set</option>
+                {channelsQuery.data?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    #{c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <div>
-              <label className="mb-1 block text-sm text-slate-400">
-                Event name (optional)
-                <input
-                  value={eventType}
-                  onChange={(e) => setEventType(e.target.value)}
-                  placeholder="Custom"
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                />
-              </label>
-            </div>
+            <label className="block">
+              <span className="text-sm text-ink-secondary">Event name (optional)</span>
+              <input value={eventType} onChange={(e) => setEventType(e.target.value)} placeholder="Custom" className={fieldClass} />
+            </label>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-sm text-slate-400">
-                  Date
-                  <input
-                    type="date"
-                    min={todayIso()}
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                  />
-                </label>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm text-slate-400">
-                  Time
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm text-slate-400">
-                Timezone
-                <input
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  placeholder="UTC, Europe/Istanbul, America/New_York..."
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                />
+              <label className="block">
+                <span className="text-sm text-ink-secondary">Date</span>
+                <input type="date" min={todayIso()} value={date} onChange={(e) => setDate(e.target.value)} className={fieldClass} />
+              </label>
+              <label className="block">
+                <span className="text-sm text-ink-secondary">Time</span>
+                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={fieldClass} />
               </label>
             </div>
+
+            <label className="block">
+              <span className="text-sm text-ink-secondary">Timezone</span>
+              <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="UTC, Europe/Istanbul, America/New_York..." className={fieldClass} />
+            </label>
           </div>
 
-          <div className="space-y-3 border-t border-slate-800 pt-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Schedule</div>
+          <div className="flex flex-col gap-3 border-t border-line-hairline pt-4">
+            <SectionHeading>Schedule</SectionHeading>
             <div>
-              <label className="mb-1 block text-sm text-slate-400">
-                Reminder offsets
-                <select
-                  value={notificationType}
-                  onChange={(e) => setNotificationType(Number(e.target.value))}
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                >
-                  {NOTIFICATION_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <span className="mb-1.5 block text-sm text-ink-secondary">Reminder offsets</span>
+              <div className="flex flex-wrap gap-1.5">
+                {NOTIFICATION_TYPES.map((t) => (
+                  <Pill key={t.value} active={notificationType === t.value} onClick={() => setNotificationType(t.value)}>
+                    {t.label}
+                  </Pill>
+                ))}
+              </div>
             </div>
 
             <div>
-              <span className="mb-1 block text-sm text-slate-400">Mention</span>
+              <span className="mb-1 block text-sm text-ink-secondary">Mention</span>
               <div className="flex gap-2">
-                <label className="sr-only" htmlFor="notification-mention-kind">
-                  Mention type
-                </label>
-                <select
-                  id="notification-mention-kind"
-                  value={mentionKind}
-                  onChange={(e) => setMentionKind(e.target.value as MentionKind)}
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                >
+                <select value={mentionKind} onChange={(e) => setMentionKind(e.target.value as MentionKind)} className={`${fieldClass} mt-0 max-w-[10rem]`}>
                   <option value="none">No mention</option>
                   <option value="everyone">@everyone</option>
                   <option value="role">Role</option>
                   <option value="member">Member</option>
                 </select>
                 {(mentionKind === "role" || mentionKind === "member") && (
-                  <label className="flex-1">
-                    <span className="sr-only">{mentionKind === "role" ? "Role ID" : "Member Discord ID"}</span>
-                    <input
-                      value={mentionId}
-                      onChange={(e) => setMentionId(e.target.value)}
-                      placeholder={mentionKind === "role" ? "Role ID" : "Member (Discord) ID"}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                    />
-                  </label>
+                  <input
+                    value={mentionId}
+                    onChange={(e) => setMentionId(e.target.value)}
+                    placeholder={mentionKind === "role" ? "Role ID" : "Member (Discord) ID"}
+                    className={`${fieldClass} mt-0 flex-1`}
+                  />
                 )}
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-sm text-slate-400">
-                Repeat
-                <select
-                  value={repeatMode}
-                  onChange={(e) => setRepeatMode(e.target.value as RepeatMode)}
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                >
-                  <option value="none">One-time</option>
-                  <option value="minutes">Custom interval</option>
-                  <option value="weekdays">Specific weekdays</option>
-                </select>
-              </label>
-              {repeatMode === "minutes" && (
-                <RepeatIntervalInput totalMinutes={repeatMinutes} onChange={setRepeatMinutes} />
-              )}
+              <span className="mb-1.5 block text-sm text-ink-secondary">Repeat</span>
+              <div className="flex gap-1.5">
+                <Pill active={repeatMode === "none"} onClick={() => setRepeatMode("none")}>
+                  One-time
+                </Pill>
+                <Pill active={repeatMode === "minutes"} onClick={() => setRepeatMode("minutes")}>
+                  Custom interval
+                </Pill>
+                <Pill active={repeatMode === "weekdays"} onClick={() => setRepeatMode("weekdays")}>
+                  Specific weekdays
+                </Pill>
+              </div>
+              {repeatMode === "minutes" && <RepeatIntervalInput totalMinutes={repeatMinutes} onChange={setRepeatMinutes} />}
               {repeatMode === "weekdays" && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {WEEKDAYS.map((d) => (
-                    <button
-                      key={d.value}
-                      type="button"
-                      onClick={() => toggleWeekday(d.value)}
-                      aria-pressed={weekdays.includes(d.value)}
-                      className={`rounded-md border px-2.5 py-1 text-xs ${
-                        weekdays.includes(d.value)
-                          ? "border-indigo-500 bg-indigo-600 text-white"
-                          : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
-                      }`}
-                    >
+                    <Pill key={d.value} active={weekdays.includes(d.value)} onClick={() => toggleWeekday(d.value)}>
                       {d.label}
-                    </button>
+                    </Pill>
                   ))}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="space-y-3 border-t border-slate-800 pt-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Message</div>
-            <div>
-              <label className="mb-1 block text-sm text-slate-400">
-                Message type
-                <select
-                  value={messageKind}
-                  onChange={(e) => setMessageKind(e.target.value as MessageKind)}
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                >
-                  <option value="plain">Plain text</option>
-                  <option value="embed">Embed</option>
-                </select>
-              </label>
+          <div className="flex flex-col gap-3 border-t border-line-hairline pt-4">
+            <SectionHeading>Message</SectionHeading>
+            <div className="flex gap-1.5">
+              <Pill active={messageKind === "plain"} onClick={() => setMessageKind("plain")}>
+                Plain text
+              </Pill>
+              <Pill active={messageKind === "embed"} onClick={() => setMessageKind("embed")}>
+                Embed
+              </Pill>
             </div>
 
             {messageKind === "plain" ? (
-              <div>
-                <label className="mb-1 block text-sm text-slate-400">
-                  Message
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={4}
-                    placeholder="%n starts in %t!"
-                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                  />
-                </label>
-                <p className="mt-1 text-xs text-slate-500">
-                  Placeholders like %t/%n/%e/%d/%i and {"{tag}"} are substituted when the bot sends this.
-                </p>
-              </div>
+              <label className="block">
+                <span className="text-sm text-ink-secondary">Message</span>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="%n starts in %t!" className={fieldClass} />
+                <p className="mt-1 font-mono text-[11px] text-ink-faint">%t %n %e %d %i and {"{tag}"} are substituted when the bot sends this.</p>
+              </label>
             ) : (
               <EmbedFieldsForm
                 draft={embedDraft}
@@ -327,22 +234,18 @@ export default function AdminNotificationCreate() {
                 sample={defaultPlaceholderSample({
                   eventName: eventType.trim() || "Event",
                   eventTime: time,
-                  eventDate: new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    timeZone: "UTC",
-                  }),
+                  eventDate: new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }),
                 })}
               />
             )}
           </div>
 
-          <button onClick={() => createMutation.mutate()} disabled={!canSubmit} className={buttonPrimary}>
-            Create notification
-          </button>
-          {createMutation.isError && (
-            <p className="text-sm text-red-400">{(createMutation.error as Error).message}</p>
-          )}
+          <div>
+            <button onClick={() => createMutation.mutate()} disabled={!canSubmit} className={buttonPrimary}>
+              Create notification
+            </button>
+            {createMutation.isError && <p className="mt-1.5 text-sm text-down-ink">{(createMutation.error as Error).message}</p>}
+          </div>
         </div>
       )}
     </Layout>

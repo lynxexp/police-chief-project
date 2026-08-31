@@ -152,9 +152,26 @@ export interface AllianceSettingsTable {
   capitol_score_channel: Snowflake | null;
 }
 
+/** One live row per alliance per cycle -- see main.py's alliance_goals
+ * CREATE TABLE doc comment. Progress is never stored: it's summed from
+ * the alliance's own vault/capitol session data at read time. */
+export interface AllianceGoalsTable {
+  alliance_id: number;
+  metric: string;
+  target: number;
+  cycle_kind: string;
+  starts_on: string;
+  ends_on: string | null;
+  repeats: Generated<SqliteBoolean>;
+  visibility: Generated<string>;
+  created_by: Snowflake | null;
+  created_at: string | null;
+}
+
 export interface AllianceDb {
   alliance_list: AllianceListTable;
   alliancesettings: AllianceSettingsTable;
+  alliance_goals: AllianceGoalsTable;
 }
 
 // ---------------------------------------------------------------------------

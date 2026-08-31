@@ -22,7 +22,7 @@ import EmbedFieldsForm, {
   isEmbedDraftValid,
   type EmbedDraft,
 } from "../components/EmbedFieldsForm";
-import { Badge, Card, ErrorState, LoadingState, SectionHeading, buttonDanger, buttonPrimary, buttonSecondary } from "../components/ui";
+import { Badge, Card, ErrorState, LoadingState, Pill, SectionHeading, Shield, buttonDanger, buttonPrimary, buttonSecondary } from "../components/ui";
 
 const NOTIFICATION_TYPE_OFFSETS: Record<number, string> = {
   1: "30, 10, 5, 0 min before",
@@ -107,8 +107,7 @@ function draftFromNotification(n: NotificationDetail): EditDraft {
     mentionKind = "member";
     mentionId = n.mentionType.slice("member_".length);
   }
-  const repeatMode: RepeatMode =
-    n.repeatMinutes === -1 ? "weekdays" : (n.repeatMinutes ?? 0) > 0 ? "minutes" : "none";
+  const repeatMode: RepeatMode = n.repeatMinutes === -1 ? "weekdays" : (n.repeatMinutes ?? 0) > 0 ? "minutes" : "none";
   const messageKind: MessageKind = n.descriptionKind === "embed" ? "embed" : "plain";
   return {
     hour: n.hour,
@@ -117,9 +116,7 @@ function draftFromNotification(n: NotificationDetail): EditDraft {
     messageKind,
     description: n.descriptionKind === "plain" ? n.descriptionText : "",
     embed: messageKind === "embed" ? embedDraftFromNotificationEmbed(n.embed) : defaultEmbedDraft(),
-    notificationType: EDITABLE_NOTIFICATION_TYPES.includes(n.notificationType as 1 | 2 | 3 | 4 | 5)
-      ? n.notificationType
-      : 3,
+    notificationType: EDITABLE_NOTIFICATION_TYPES.includes(n.notificationType as 1 | 2 | 3 | 4 | 5) ? n.notificationType : 3,
     mentionKind,
     mentionId,
     repeatMode,
@@ -128,6 +125,17 @@ function draftFromNotification(n: NotificationDetail): EditDraft {
     eventType: n.eventType ?? "",
   };
 }
+
+function Fact({ label, tone, children }: { label: string; tone?: "gold"; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className={`font-mono text-[10px] tracking-eyebrow uppercase ${tone === "gold" ? "text-gold-ink" : "text-ink-faint"}`}>{label}</dt>
+      <dd className={`mt-0.5 ${tone === "gold" ? "text-gold-ink" : "text-ink-secondary"}`}>{children}</dd>
+    </div>
+  );
+}
+
+const fieldClass = "mt-1 w-full rounded-control border border-line bg-surface-sunken px-3 py-1.5 text-sm text-ink";
 
 export default function AdminNotificationDetail() {
   const { allianceId: allianceIdParam, id: idParam } = useParams<{ allianceId: string; id: string }>();
@@ -163,11 +171,7 @@ export default function AdminNotificationDetail() {
   const saveMutation = useMutation({
     mutationFn: () => {
       const mentionType =
-        draft!.mentionKind === "role"
-          ? `role_${draft!.mentionId}`
-          : draft!.mentionKind === "member"
-            ? `member_${draft!.mentionId}`
-            : draft!.mentionKind;
+        draft!.mentionKind === "role" ? `role_${draft!.mentionId}` : draft!.mentionKind === "member" ? `member_${draft!.mentionId}` : draft!.mentionKind;
       return updateNotification(guildId!, id, {
         hour: draft!.hour,
         minute: draft!.minute,
@@ -205,15 +209,12 @@ export default function AdminNotificationDetail() {
   const needsDowngradeWarning = n && (n.descriptionKind === "customTimes" || n.repeatMinutes === -2);
 
   return (
-    <Layout
-      title="Notification detail"
-      backTo={{ to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications" }}
-    >
+    <Layout title="Notification detail" backTo={{ to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications" }}>
       {notificationQuery.isLoading && <LoadingState />}
-      {notificationQuery.error && <ErrorState message="Couldn't load this notification." />}
+      {notificationQuery.error && <ErrorState message="Couldn't load this notification." onRetry={notificationQuery.refetch} />}
 
       {n && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => {
@@ -224,11 +225,7 @@ export default function AdminNotificationDetail() {
             >
               {editing ? "Cancel edit" : "Edit"}
             </button>
-            <button
-              onClick={() => toggleMutation.mutate()}
-              disabled={toggleMutation.isPending}
-              className={buttonSecondary}
-            >
+            <button onClick={() => toggleMutation.mutate()} disabled={toggleMutation.isPending} className={buttonSecondary}>
               {n.isEnabled ? "Disable" : "Enable"}
             </button>
             <button
@@ -243,94 +240,58 @@ export default function AdminNotificationDetail() {
           </div>
 
           {editing && draft && (
-            <Card className="border-indigo-900">
+            <Card className="border-gold-border">
               <SectionHeading>Edit notification</SectionHeading>
               {needsDowngradeWarning && (
-                <p className="mb-3 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
-                  This notification uses a repeat mode or message type this editor doesn't support (a
-                  custom-event link or custom times). Saving here will convert it to a plain notification
-                  and drop that configuration -- edit the linked custom event instead if this was created
-                  that way.
-                </p>
+                <div className="mb-3 flex items-start gap-2.5 rounded-control border border-gold-border bg-gold-tint px-3 py-2.5">
+                  <Shield size={32} tone="gold">
+                    !
+                  </Shield>
+                  <p className="text-xs text-ink-secondary">
+                    This notification uses a repeat mode or message type this editor doesn't support (a custom-event
+                    link or custom times). Saving here will convert it to a plain notification and drop that
+                    configuration -- edit the linked custom event instead if this was created that way.
+                  </p>
+                </div>
               )}
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">
-                    Event name (optional)
-                    <input
-                      value={draft.eventType}
-                      onChange={(e) => setDraft({ ...draft, eventType: e.target.value })}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                    />
-                  </label>
-                </div>
+              <div className="flex flex-col gap-3">
+                <label className="block">
+                  <span className="text-xs text-ink-muted">Event name (optional)</span>
+                  <input value={draft.eventType} onChange={(e) => setDraft({ ...draft, eventType: e.target.value })} className={fieldClass} />
+                </label>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      Hour (0-23)
-                      <input
-                        type="number"
-                        min={0}
-                        max={23}
-                        value={draft.hour}
-                        onChange={(e) => setDraft({ ...draft, hour: Number(e.target.value) })}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                      />
-                    </label>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      Minute (0-59)
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        value={draft.minute}
-                        onChange={(e) => setDraft({ ...draft, minute: Number(e.target.value) })}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                      />
-                    </label>
+                  <label className="block">
+                    <span className="text-xs text-ink-muted">Hour (0-23)</span>
+                    <input type="number" min={0} max={23} value={draft.hour} onChange={(e) => setDraft({ ...draft, hour: Number(e.target.value) })} className={fieldClass} />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-ink-muted">Minute (0-59)</span>
+                    <input type="number" min={0} max={59} value={draft.minute} onChange={(e) => setDraft({ ...draft, minute: Number(e.target.value) })} className={fieldClass} />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="text-xs text-ink-muted">Timezone</span>
+                  <input value={draft.timezone} onChange={(e) => setDraft({ ...draft, timezone: e.target.value })} className={fieldClass} />
+                </label>
+                <div>
+                  <span className="mb-1.5 block text-xs text-ink-muted">Reminder offsets</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(NOTIFICATION_TYPE_OFFSETS)
+                      .filter(([v]) => EDITABLE_NOTIFICATION_TYPES.includes(Number(v) as 1 | 2 | 3 | 4 | 5))
+                      .map(([v, label]) => (
+                        <Pill key={v} active={draft.notificationType === Number(v)} onClick={() => setDraft({ ...draft, notificationType: Number(v) })}>
+                          {label}
+                        </Pill>
+                      ))}
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">
-                    Timezone
-                    <input
-                      value={draft.timezone}
-                      onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                    />
-                  </label>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">
-                    Reminder offsets
-                    <select
-                      value={draft.notificationType}
-                      onChange={(e) => setDraft({ ...draft, notificationType: Number(e.target.value) })}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                    >
-                      {Object.entries(NOTIFICATION_TYPE_OFFSETS)
-                        .filter(([v]) => EDITABLE_NOTIFICATION_TYPES.includes(Number(v) as 1 | 2 | 3 | 4 | 5))
-                        .map(([v, label]) => (
-                          <option key={v} value={v}>
-                            {label}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                </div>
-                <div>
-                  <span className="mb-1 block text-xs text-slate-400">Mention</span>
+                  <span className="mb-1 block text-xs text-ink-muted">Mention</span>
                   <div className="flex gap-2">
-                    <label className="sr-only" htmlFor="edit-notification-mention-kind">
-                      Mention type
-                    </label>
                     <select
-                      id="edit-notification-mention-kind"
                       value={draft.mentionKind}
                       onChange={(e) => setDraft({ ...draft, mentionKind: e.target.value as EditDraft["mentionKind"] })}
-                      className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                      className={`${fieldClass} mt-0 max-w-[10rem]`}
                     >
                       <option value="none">No mention</option>
                       <option value="everyone">@everyone</option>
@@ -338,89 +299,66 @@ export default function AdminNotificationDetail() {
                       <option value="member">Member</option>
                     </select>
                     {(draft.mentionKind === "role" || draft.mentionKind === "member") && (
-                      <label className="flex-1">
-                        <span className="sr-only">{draft.mentionKind === "role" ? "Role ID" : "Member ID"}</span>
-                        <input
-                          value={draft.mentionId}
-                          onChange={(e) => setDraft({ ...draft, mentionId: e.target.value })}
-                          placeholder={draft.mentionKind === "role" ? "Role ID" : "Member ID"}
-                          className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                        />
-                      </label>
+                      <input
+                        value={draft.mentionId}
+                        onChange={(e) => setDraft({ ...draft, mentionId: e.target.value })}
+                        placeholder={draft.mentionKind === "role" ? "Role ID" : "Member ID"}
+                        className={`${fieldClass} mt-0 flex-1`}
+                      />
                     )}
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">
-                    Repeat
-                    <select
-                      value={draft.repeatMode}
-                      onChange={(e) => setDraft({ ...draft, repeatMode: e.target.value as RepeatMode })}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                    >
-                      <option value="none">One-time</option>
-                      <option value="minutes">Custom interval</option>
-                      <option value="weekdays">Specific weekdays</option>
-                    </select>
-                  </label>
+                  <span className="mb-1.5 block text-xs text-ink-muted">Repeat</span>
+                  <div className="flex gap-1.5">
+                    <Pill active={draft.repeatMode === "none"} onClick={() => setDraft({ ...draft, repeatMode: "none" })}>
+                      One-time
+                    </Pill>
+                    <Pill active={draft.repeatMode === "minutes"} onClick={() => setDraft({ ...draft, repeatMode: "minutes" })}>
+                      Custom interval
+                    </Pill>
+                    <Pill active={draft.repeatMode === "weekdays"} onClick={() => setDraft({ ...draft, repeatMode: "weekdays" })}>
+                      Specific weekdays
+                    </Pill>
+                  </div>
                   {draft.repeatMode === "minutes" && (
-                    <RepeatIntervalInput
-                      totalMinutes={draft.repeatMinutes}
-                      onChange={(minutes) => setDraft({ ...draft, repeatMinutes: minutes })}
-                    />
+                    <RepeatIntervalInput totalMinutes={draft.repeatMinutes} onChange={(minutes) => setDraft({ ...draft, repeatMinutes: minutes })} />
                   )}
                   {draft.repeatMode === "weekdays" && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {WEEKDAYS.map((d) => (
-                        <button
+                        <Pill
                           key={d.value}
-                          type="button"
+                          active={draft.weekdays.includes(d.value)}
                           onClick={() =>
                             setDraft({
                               ...draft,
-                              weekdays: draft.weekdays.includes(d.value)
-                                ? draft.weekdays.filter((x) => x !== d.value)
-                                : [...draft.weekdays, d.value],
+                              weekdays: draft.weekdays.includes(d.value) ? draft.weekdays.filter((x) => x !== d.value) : [...draft.weekdays, d.value],
                             })
                           }
-                          aria-pressed={draft.weekdays.includes(d.value)}
-                          className={`rounded-md border px-2.5 py-1 text-xs ${
-                            draft.weekdays.includes(d.value)
-                              ? "border-indigo-500 bg-indigo-600 text-white"
-                              : "border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800"
-                          }`}
                         >
                           {d.label}
-                        </button>
+                        </Pill>
                       ))}
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">
-                    Message type
-                    <select
-                      value={draft.messageKind}
-                      onChange={(e) => setDraft({ ...draft, messageKind: e.target.value as MessageKind })}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                    >
-                      <option value="plain">Plain text</option>
-                      <option value="embed">Embed</option>
-                    </select>
-                  </label>
+                  <span className="mb-1.5 block text-xs text-ink-muted">Message type</span>
+                  <div className="flex gap-1.5">
+                    <Pill active={draft.messageKind === "plain"} onClick={() => setDraft({ ...draft, messageKind: "plain" })}>
+                      Plain text
+                    </Pill>
+                    <Pill active={draft.messageKind === "embed"} onClick={() => setDraft({ ...draft, messageKind: "embed" })}>
+                      Embed
+                    </Pill>
+                  </div>
                 </div>
                 {draft.messageKind === "plain" ? (
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      Message
-                      <textarea
-                        value={draft.description}
-                        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                        rows={4}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                      />
-                    </label>
-                  </div>
+                  <label className="block">
+                    <span className="text-xs text-ink-muted">Message</span>
+                    <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} rows={4} className={fieldClass} />
+                  </label>
                 ) : (
                   <EmbedFieldsForm
                     draft={draft.embed}
@@ -431,141 +369,101 @@ export default function AdminNotificationDetail() {
                     })}
                   />
                 )}
-                <button
-                  onClick={() => saveMutation.mutate()}
-                  disabled={
-                    saveMutation.isPending ||
-                    !draft.timezone.trim() ||
-                    (draft.messageKind === "plain" ? !draft.description.trim() : !isEmbedDraftValid(draft.embed)) ||
-                    (draft.repeatMode === "weekdays" && draft.weekdays.length === 0) ||
-                    (draft.repeatMode === "minutes" && draft.repeatMinutes <= 0)
-                  }
-                  className={buttonPrimary}
-                >
-                  Save changes
-                </button>
-                {saveMutation.isError && (
-                  <p className="text-sm text-red-400">{(saveMutation.error as Error).message}</p>
-                )}
+                <div>
+                  <button
+                    onClick={() => saveMutation.mutate()}
+                    disabled={
+                      saveMutation.isPending ||
+                      !draft.timezone.trim() ||
+                      (draft.messageKind === "plain" ? !draft.description.trim() : !isEmbedDraftValid(draft.embed)) ||
+                      (draft.repeatMode === "weekdays" && draft.weekdays.length === 0) ||
+                      (draft.repeatMode === "minutes" && draft.repeatMinutes <= 0)
+                    }
+                    className={buttonPrimary}
+                  >
+                    Save changes
+                  </button>
+                  {saveMutation.isError && <p className="mt-1.5 text-sm text-down-ink">{(saveMutation.error as Error).message}</p>}
+                </div>
               </div>
             </Card>
           )}
 
-          <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-lg font-medium">{n.eventType ?? "Custom"}</div>
-              <Badge variant={n.isEnabled ? "success" : "neutral"}>
-                {n.isEnabled ? "Enabled" : "Disabled"}
-              </Badge>
+          <div className="overflow-hidden rounded-card border border-gold-border">
+            <div className="flex items-center justify-between bg-gradient-to-b from-[var(--gold-fill-from)] to-[var(--gold-fill-to)] px-4 py-2 font-sans text-sm font-semibold text-on-gold">
+              <span>{n.eventType ?? "Custom"}</span>
+              <Badge variant={n.isEnabled ? "success" : "neutral"}>{n.isEnabled ? "Enabled" : "Disabled"}</Badge>
             </div>
-            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-slate-500">Time</dt>
-                <dd>
-                  {String(n.hour).padStart(2, "0")}:{String(n.minute).padStart(2, "0")} ({n.timezone})
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Channel</dt>
-                <dd>#{n.channelName ?? n.channelId}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Reminder offsets</dt>
-                <dd>{NOTIFICATION_TYPE_OFFSETS[n.notificationType] ?? `Type ${n.notificationType}`}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Mention</dt>
-                <dd>{mentionLabel(n.mentionType)}</dd>
-              </div>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-3 bg-surface-panel p-4 text-sm sm:grid-cols-2">
+              <Fact label="Time">
+                {String(n.hour).padStart(2, "0")}:{String(n.minute).padStart(2, "0")} ({n.timezone})
+              </Fact>
+              <Fact label="Channel">#{n.channelName ?? n.channelId}</Fact>
+              <Fact label="Reminder offsets">{NOTIFICATION_TYPE_OFFSETS[n.notificationType] ?? `Type ${n.notificationType}`}</Fact>
+              <Fact label="Mention">{mentionLabel(n.mentionType)}</Fact>
               <div className="sm:col-span-2">
-                <dt className="text-slate-500">Repeat</dt>
-                <dd>{repeatDescription(n)}</dd>
+                <Fact label="Repeat">{repeatDescription(n)}</Fact>
               </div>
-              <div>
-                <dt className="text-slate-500">Next fire</dt>
-                <dd>{formatUtcAndLocal(n.nextNotification)}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Last fired</dt>
-                <dd>{formatUtcAndLocal(n.lastNotification)}</dd>
-              </div>
+              <Fact label="Next fire">{formatUtcAndLocal(n.nextNotification)}</Fact>
+              <Fact label="Last fired">{formatUtcAndLocal(n.lastNotification)}</Fact>
               {n.autoDisabledAt && (
                 <div className="sm:col-span-2">
-                  <dt className="text-amber-400">Auto-disabled</dt>
-                  <dd className="text-amber-400">{formatUtcAndLocal(n.autoDisabledAt)}</dd>
+                  <Fact label="Auto-disabled" tone="gold">
+                    {formatUtcAndLocal(n.autoDisabledAt)}
+                  </Fact>
                 </div>
               )}
-              <div>
-                <dt className="text-slate-500">Created by</dt>
-                <dd>{n.createdBy}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Created at</dt>
-                <dd>{n.createdAt ? new Date(n.createdAt).toLocaleString() : "—"}</dd>
-              </div>
+              <Fact label="Created by">{n.createdBy}</Fact>
+              <Fact label="Created at">{n.createdAt ? new Date(n.createdAt).toLocaleString() : "—"}</Fact>
             </dl>
-          </Card>
+          </div>
 
           <Card>
             <SectionHeading>Message</SectionHeading>
             {n.descriptionKind === "embed" && n.embed ? (
               <DiscordEmbedPreview embed={n.embed} applyPlaceholders={false} />
             ) : (
-              <p className="whitespace-pre-wrap text-sm text-slate-300">{n.descriptionText || "(empty)"}</p>
+              <p className="whitespace-pre-wrap text-sm text-ink-secondary">{n.descriptionText || "(empty)"}</p>
             )}
-            {n.customTimes && (
-              <div className="mt-2 text-xs text-slate-500">
-                Custom times: {n.customTimes.join(", ")} min before
-              </div>
-            )}
+            {n.customTimes && <p className="mt-2 font-mono text-xs text-ink-faint">Custom times: {n.customTimes.join(", ")} min before</p>}
           </Card>
 
           <Card>
             <SectionHeading>Sent history</SectionHeading>
             {historyQuery.isLoading && <LoadingState />}
-            {historyQuery.error && <ErrorState message="Couldn't load history." />}
-            {historyQuery.data && historyQuery.data.rows.length === 0 && (
-              <p className="text-sm text-slate-400">No sends recorded yet.</p>
-            )}
+            {historyQuery.error && <ErrorState message="Couldn't load history." onRetry={historyQuery.refetch} />}
+            {historyQuery.data && historyQuery.data.rows.length === 0 && <p className="text-sm text-ink-muted">No sends recorded yet.</p>}
             {historyQuery.data && historyQuery.data.rows.length > 0 && (
-              <>
-                <div className="overflow-x-auto">
+              <div className="flex flex-col gap-3">
+                <div className="overflow-x-auto rounded-card border border-line">
                   <table className="w-full text-left text-sm">
-                    <thead className="text-xs text-slate-500">
-                      <tr>
-                        <th className="pb-1 pr-4">Sent at</th>
-                        <th className="pb-1 pr-4">Offset</th>
-                        <th className="pb-1 pr-4">Deleted</th>
+                    <thead>
+                      <tr className="bg-surface-header font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">
+                        <th className="px-3 py-2 font-medium">Sent at</th>
+                        <th className="px-3 py-2 font-medium">Offset</th>
+                        <th className="px-3 py-2 font-medium">Deleted</th>
                       </tr>
                     </thead>
-                    <tbody className="text-slate-300">
-                      {historyQuery.data.rows.map((h) => (
-                        <tr key={h.id} className="border-t border-slate-800">
-                          <td className="py-1 pr-4">{formatUtcAndLocal(h.sentAt)}</td>
-                          <td className="py-1 pr-4">{h.notificationTime} min before</td>
-                          <td className="py-1 pr-4">{formatUtcAndLocal(h.deletedAt)}</td>
+                    <tbody className="divide-y divide-line-hairline">
+                      {historyQuery.data.rows.map((h, i) => (
+                        <tr key={h.id} className={i % 2 === 1 ? "bg-surface-panel-alt" : undefined}>
+                          <td className="px-3 py-2 font-mono text-ink-secondary">{formatUtcAndLocal(h.sentAt)}</td>
+                          <td className="px-3 py-2 font-mono text-ink-secondary">{h.notificationTime} min before</td>
+                          <td className="px-3 py-2 font-mono text-ink-secondary">{formatUtcAndLocal(h.deletedAt)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-3 flex items-center gap-3 text-xs">
-                  <button
-                    onClick={() => setHistoryOffset(Math.max(0, historyOffset - HISTORY_PAGE_SIZE))}
-                    disabled={historyOffset === 0}
-                    className={buttonSecondary}
-                  >
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setHistoryOffset(Math.max(0, historyOffset - HISTORY_PAGE_SIZE))} disabled={historyOffset === 0} className={buttonSecondary}>
                     Newer
                   </button>
-                  <button
-                    onClick={() => setHistoryOffset(historyOffset + HISTORY_PAGE_SIZE)}
-                    disabled={!historyQuery.data.hasMore}
-                    className={buttonSecondary}
-                  >
+                  <button onClick={() => setHistoryOffset(historyOffset + HISTORY_PAGE_SIZE)} disabled={!historyQuery.data.hasMore} className={buttonSecondary}>
                     Older
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </Card>
         </div>

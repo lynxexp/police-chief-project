@@ -18,7 +18,8 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "kysely";
 import { usersDb, vaultDataDb, capitolWarDb, allianceDb, changesDb } from "../db/connections.js";
-import { resolveAuthContext, canViewAlliance } from "../auth/context.js";
+import { resolveAuthContext, canViewAlliance, accessibleAllianceIds } from "../auth/context.js";
+import { snowflake } from "../db/snowflake.js";
 
 // power_changes / combat_power_changes are lazily created (see
 // connections.ts's EXPECTED optional flag) -- the bot only ever
@@ -98,23 +99,226 @@ export default async function memberRoutes(fastify: FastifyInstance): Promise<vo
     const alliances = allianceIds.length
       ? await allianceDb
           .selectFrom("alliance_list")
-          .select(["alliance_id", "name"])
+          .select(["alliance_id", "name", "tag", "kid"])
           .where("alliance_id", "in", allianceIds)
           .execute()
       : [];
-    const allianceById = new Map(alliances.map((a) => [a.alliance_id, a.name]));
+    const allianceById = new Map(alliances.map((a) => [a.alliance_id, a]));
 
-    return rows.map((r) => ({
-      fid: r.fid,
-      nickname: r.nickname,
-      allianceId: r.alliance !== null ? Number(r.alliance) : null,
-      allianceName: r.alliance !== null ? (allianceById.get(Number(r.alliance)) ?? null) : null,
-      chiefOfficeLv: r.chief_office_lv,
-      power: r.power,
-      combatPower: r.combat_power,
-      isActive: Boolean(r.is_active),
-    }));
+    // Recent vault attendance per character, for the profile's streak/
+    // personal-best/rank widgets -- same join vault-trend uses below, just
+    // scoped to the last 10 hunts and combined across trap numbers (a
+    // simplification: the Attendance page's own Vault 1/Vault 2 split is
+    // the source of truth, this is a compact cross-trap summary). A LEFT
+    // JOIN against every hunt (not just ones this fid appears in) so a
+    // missed hunt becomes a real `value: null` session, not an absence --
+    // engagement.ts's streak/attendanceRate need the gaps to be visible.
+    interface VaultSession {
+      date: string;
+      value: number | null;
+      rank: number | null;
+    }
+    const vaultSessionsByFid = new Map<number, VaultSession[]>();
+    for (const r of rows) {
+      if (r.alliance === null) continue;
+      const allianceIdNum = Number(r.alliance);
+      const hunts = await vaultDataDb
+        .selectFrom("vault_hunts as bh")
+        .leftJoin("vault_player_damage as bpd", (join) =>
+          join.onRef("bpd.hunt_id", "=", "bh.id").on("bpd.fid", "=", r.fid),
+        )
+        .select(["bh.date", "bpd.damage", "bpd.rank"])
+        .where("bh.alliance_id", "=", allianceIdNum)
+        .orderBy("bh.date", "desc")
+        .limit(10)
+        .execute();
+      vaultSessionsByFid.set(
+        r.fid,
+        hunts.reverse().map((h) => ({ date: h.date, value: h.damage, rank: h.rank })),
+      );
+    }
+
+    return rows.map((r) => {
+      const sessions = vaultSessionsByFid.get(r.fid) ?? [];
+      const latestAttended = [...sessions].reverse().find((s) => s.value !== null);
+      const alliance = r.alliance !== null ? allianceById.get(Number(r.alliance)) : undefined;
+      return {
+        fid: r.fid,
+        nickname: r.nickname,
+        allianceId: r.alliance !== null ? Number(r.alliance) : null,
+        allianceName: alliance?.name ?? null,
+        allianceTag: alliance?.tag ?? null,
+        state: alliance?.kid ?? null,
+        chiefOfficeLv: r.chief_office_lv,
+        power: r.power,
+        combatPower: r.combat_power,
+        isActive: Boolean(r.is_active),
+        recentVaultSessions: sessions.map((s) => ({ date: s.date, value: s.value })),
+        latestVaultRank: latestAttended?.rank ?? null,
+      };
+    });
   });
+
+  fastify.get<{ Params: { allianceId: number } }>(
+    "/alliance/:allianceId",
+    { schema: { params: allianceIdParam } },
+    async (request, reply) => {
+      const { allianceId } = request.params;
+      const ctx = await resolveAuthContext(request.session!);
+      if (!(await canViewAlliance(ctx, allianceId))) {
+        return reply.code(403).send({ error: "not_alliance_member" });
+      }
+
+      const alliance = await allianceDb
+        .selectFrom("alliance_list")
+        .select(["name", "tag", "kid"])
+        .where("alliance_id", "=", allianceId)
+        .executeTakeFirst();
+      if (!alliance) {
+        return reply.code(404).send({ error: "alliance_not_found" });
+      }
+
+      const { memberCount } = await usersDb
+        .selectFrom("users")
+        .select(sql<number>`COUNT(*)`.as("memberCount"))
+        .where("alliance", "=", String(allianceId))
+        .where("is_active", "=", 1)
+        .executeTakeFirstOrThrow();
+
+      return { name: alliance.name, tag: alliance.tag, state: alliance.kid, memberCount };
+    },
+  );
+
+  /** Resolves a goal's cycle_kind into a concrete [startsOn, endsOn]
+   * (both inclusive, YYYY-MM-DD) window to sum progress over. "window" is
+   * whatever the admin picked; "monthly"/"rolling7" are always anchored
+   * to today, so a repeating goal's displayed progress is always for the
+   * CURRENT cycle, never a past one. */
+  function resolveGoalWindow(goal: { cycle_kind: string; starts_on: string; ends_on: string | null }): {
+    startsOn: string;
+    endsOn: string;
+  } {
+    const today = new Date().toISOString().slice(0, 10);
+    if (goal.cycle_kind === "rolling7") {
+      const start = new Date();
+      start.setUTCDate(start.getUTCDate() - 7);
+      return { startsOn: start.toISOString().slice(0, 10), endsOn: today };
+    }
+    if (goal.cycle_kind === "monthly") {
+      const now = new Date();
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      return { startsOn: start.toISOString().slice(0, 10), endsOn: today };
+    }
+    return { startsOn: goal.starts_on, endsOn: goal.ends_on ?? today };
+  }
+
+  /** Progress is computed fresh from the same session data the
+   * leaderboard/attendance endpoints already aggregate -- never stored,
+   * so it can never disagree with what the leaderboard shows. */
+  async function computeGoalProgress(allianceId: number, metric: string, startsOn: string, endsOn: string): Promise<number> {
+    if (metric === "vault") {
+      const { total } = await vaultDataDb
+        .selectFrom("vault_hunts")
+        .select(sql<number>`COALESCE(SUM(total_damage), 0)`.as("total"))
+        .where("alliance_id", "=", allianceId)
+        .where("date", ">=", startsOn)
+        .where("date", "<=", endsOn)
+        .executeTakeFirstOrThrow();
+      return total;
+    }
+    if (metric === "capitol") {
+      const { total } = await capitolWarDb
+        .selectFrom("capitol_war_events as e")
+        .leftJoin("capitol_war_points as p", "p.event_id", "e.id")
+        .select(sql<number>`COALESCE(SUM(p.points), 0)`.as("total"))
+        .where("e.alliance_id", "=", allianceId)
+        .where("e.date", ">=", startsOn)
+        .where("e.date", "<=", endsOn)
+        .executeTakeFirstOrThrow();
+      return total;
+    }
+    // turnout / perfect: derived from the same vault_hunts/vault_player_damage
+    // attendance data the vault-attendance endpoint uses, scoped to the window.
+    const hunts = await vaultDataDb
+      .selectFrom("vault_hunts")
+      .select("id")
+      .where("alliance_id", "=", allianceId)
+      .where("date", ">=", startsOn)
+      .where("date", "<=", endsOn)
+      .execute();
+    const huntIds = hunts.map((h) => h.id);
+    const roster = await usersDb
+      .selectFrom("users")
+      .select("fid")
+      .where("alliance", "=", String(allianceId))
+      .where("is_active", "=", 1)
+      .execute();
+    if (huntIds.length === 0 || roster.length === 0) return 0;
+
+    const attended = await vaultDataDb
+      .selectFrom("vault_player_damage")
+      .select(["fid", sql<number>`COUNT(*)`.as("cnt")])
+      .where("hunt_id", "in", huntIds)
+      .where("fid", "is not", null)
+      .groupBy("fid")
+      .execute();
+    const attendedByFid = new Map(attended.map((a) => [a.fid as number, a.cnt]));
+
+    if (metric === "perfect") {
+      return roster.filter((m) => (attendedByFid.get(m.fid) ?? 0) === huntIds.length).length;
+    }
+    // turnout: % of the active roster that attended at least one hunt in the window.
+    const attendedCount = roster.filter((m) => (attendedByFid.get(m.fid) ?? 0) > 0).length;
+    return Math.round((attendedCount / roster.length) * 100);
+  }
+
+  fastify.get<{ Params: { allianceId: number } }>(
+    "/alliance/:allianceId/goal",
+    { schema: { params: allianceIdParam } },
+    async (request, reply) => {
+      const { allianceId } = request.params;
+      const ctx = await resolveAuthContext(request.session!);
+      if (!(await canViewAlliance(ctx, allianceId))) {
+        return reply.code(403).send({ error: "not_alliance_member" });
+      }
+
+      const goal = await allianceDb
+        .selectFrom("alliance_goals")
+        .select([
+          "metric", "target", "cycle_kind", "starts_on", "ends_on",
+          "repeats", "visibility", snowflake("created_by").as("created_by"), "created_at",
+        ])
+        .where("alliance_id", "=", allianceId)
+        .executeTakeFirst();
+      // No goal row means no panel at all -- an empty track reads as a
+      // broken feature, so this is null, not a zeroed-out goal shape.
+      if (!goal) return null;
+
+      if (goal.visibility === "officers") {
+        const ids = await accessibleAllianceIds(ctx);
+        const isOfficer = ids === "all" || ids.includes(allianceId);
+        if (!isOfficer) return null;
+      }
+
+      const { startsOn, endsOn } = resolveGoalWindow(goal);
+      const progress = await computeGoalProgress(allianceId, goal.metric, startsOn, endsOn);
+
+      return {
+        metric: goal.metric,
+        target: goal.target,
+        cycleKind: goal.cycle_kind,
+        startsOn: goal.starts_on,
+        endsOn: goal.ends_on,
+        repeats: Boolean(goal.repeats),
+        visibility: goal.visibility,
+        createdBy: goal.created_by,
+        createdAt: goal.created_at,
+        progress,
+        windowStartsOn: startsOn,
+        windowEndsOn: endsOn,
+      };
+    },
+  );
 
   fastify.get<{ Params: { allianceId: number }; Querystring: { includeInactive?: string } }>(
     "/alliance/:allianceId/members",
@@ -468,12 +672,13 @@ export default async function memberRoutes(fastify: FastifyInstance): Promise<vo
       // unlike the leaderboard) so a member who never showed up still
       // appears with attended=0 -- the whole point of an attendance view
       // is surfacing who ISN'T participating, not just ranking who is.
-      let sessionsQuery = vaultDataDb
+      let huntsQuery = vaultDataDb
         .selectFrom("vault_hunts")
-        .select(sql<number>`COUNT(*)`.as("totalSessions"))
+        .select(["id", "date"])
         .where("alliance_id", "=", allianceId);
-      if (trap !== undefined) sessionsQuery = sessionsQuery.where("trap_number", "=", trap);
-      const { totalSessions } = await sessionsQuery.executeTakeFirstOrThrow();
+      if (trap !== undefined) huntsQuery = huntsQuery.where("trap_number", "=", trap);
+      const hunts = await huntsQuery.orderBy("date", "asc").execute();
+      const totalSessions = hunts.length;
 
       const roster = await usersDb
         .selectFrom("users")
@@ -485,22 +690,32 @@ export default async function memberRoutes(fastify: FastifyInstance): Promise<vo
       let attendedQuery = vaultDataDb
         .selectFrom("vault_hunts as bh")
         .innerJoin("vault_player_damage as bpd", "bpd.hunt_id", "bh.id")
-        .select(["bpd.fid", sql<number>`COUNT(*)`.as("attended")])
+        .select(["bpd.fid", "bh.id as huntId"])
         .where("bh.alliance_id", "=", allianceId)
-        .where("bpd.fid", "is not", null)
-        .groupBy("bpd.fid");
+        .where("bpd.fid", "is not", null);
       if (trap !== undefined) attendedQuery = attendedQuery.where("bh.trap_number", "=", trap);
       const attendedRows = await attendedQuery.execute();
-      const attendedByFid = new Map(attendedRows.map((r) => [r.fid, r.attended]));
+      const attendedHuntIdsByFid = new Map<number, Set<number>>();
+      for (const r of attendedRows) {
+        if (r.fid === null) continue;
+        if (!attendedHuntIdsByFid.has(r.fid)) attendedHuntIdsByFid.set(r.fid, new Set());
+        attendedHuntIdsByFid.get(r.fid)!.add(r.huntId);
+      }
 
       const members = roster
         .map((m) => {
-          const attended = attendedByFid.get(m.fid) ?? 0;
+          const attendedIds = attendedHuntIdsByFid.get(m.fid);
+          const attended = attendedIds?.size ?? 0;
           return {
             fid: m.fid,
             nickname: m.nickname,
             attended,
             attendanceRate: totalSessions > 0 ? attended / totalSessions : 0,
+            // Chronological attended/missed per hunt -- powers the
+            // per-hunt block row (see hooks/engagement.ts's
+            // attendanceBlocks, which additionally marks the miss that
+            // broke a streak as its own colour).
+            sessions: hunts.map((h) => ({ date: h.date, value: attendedIds?.has(h.id) ? 1 : null })),
           };
         })
         .sort((a, b) => b.attended - a.attended);
@@ -519,11 +734,13 @@ export default async function memberRoutes(fastify: FastifyInstance): Promise<vo
         return reply.code(403).send({ error: "not_alliance_member" });
       }
 
-      const { totalSessions } = await capitolWarDb
+      const events = await capitolWarDb
         .selectFrom("capitol_war_events")
-        .select(sql<number>`COUNT(*)`.as("totalSessions"))
+        .select(["id", "date"])
         .where("alliance_id", "=", allianceId)
-        .executeTakeFirstOrThrow();
+        .orderBy("date", "asc")
+        .execute();
+      const totalSessions = events.length;
 
       const roster = await usersDb
         .selectFrom("users")
@@ -535,21 +752,27 @@ export default async function memberRoutes(fastify: FastifyInstance): Promise<vo
       const attendedRows = await capitolWarDb
         .selectFrom("capitol_war_events as e")
         .innerJoin("capitol_war_points as p", "p.event_id", "e.id")
-        .select(["p.fid", sql<number>`COUNT(*)`.as("attended")])
+        .select(["p.fid", "e.id as eventId"])
         .where("e.alliance_id", "=", allianceId)
         .where("p.fid", "is not", null)
-        .groupBy("p.fid")
         .execute();
-      const attendedByFid = new Map(attendedRows.map((r) => [r.fid, r.attended]));
+      const attendedEventIdsByFid = new Map<number, Set<number>>();
+      for (const r of attendedRows) {
+        if (r.fid === null) continue;
+        if (!attendedEventIdsByFid.has(r.fid)) attendedEventIdsByFid.set(r.fid, new Set());
+        attendedEventIdsByFid.get(r.fid)!.add(r.eventId);
+      }
 
       const members = roster
         .map((m) => {
-          const attended = attendedByFid.get(m.fid) ?? 0;
+          const attendedIds = attendedEventIdsByFid.get(m.fid);
+          const attended = attendedIds?.size ?? 0;
           return {
             fid: m.fid,
             nickname: m.nickname,
             attended,
             attendanceRate: totalSessions > 0 ? attended / totalSessions : 0,
+            sessions: events.map((e) => ({ date: e.date, value: attendedIds?.has(e.id) ? 1 : null })),
           };
         })
         .sort((a, b) => b.attended - a.attended);

@@ -90,6 +90,13 @@ export function getGuilds(): Promise<GuildOption[]> {
   return request<GuildOption[]>("/auth/guilds");
 }
 
+/** Separate from getMe() on purpose -- this hits Discord's API live, so
+ * the caller should cache it with a long staleTime rather than refetching
+ * on every mount/focus the way getMe() does. */
+export function getMyDisplayName(): Promise<{ displayName: string | null }> {
+  return request<{ displayName: string | null }>("/auth/me/display-name");
+}
+
 export function setActiveGuild(guildId: string): Promise<AuthContext> {
   return request<AuthContext>("/auth/active-guild", {
     method: "POST",
@@ -112,10 +119,18 @@ export interface OwnProfileEntry {
   nickname: string | null;
   allianceId: number | null;
   allianceName: string | null;
+  allianceTag: string | null;
+  state: number | null;
   chiefOfficeLv: number | null;
   power: number | null;
   combatPower: number | null;
   isActive: boolean;
+  /** Last 10 vault hunts for the alliance, chronological, value null for
+   * ones this character didn't appear in -- feed straight into
+   * hooks/engagement.ts's streak/personalBest/attendanceRate. */
+  recentVaultSessions: { date: string; value: number | null }[];
+  /** This character's rank in their most recently-attended vault hunt. */
+  latestVaultRank: number | null;
 }
 
 export interface RosterMember {
@@ -188,6 +203,10 @@ export interface AttendanceMember {
   nickname: string | null;
   attended: number;
   attendanceRate: number;
+  /** Chronological, one per logged session -- value is 1 if attended,
+   * null if missed. Feed straight into hooks/engagement.ts's
+   * attendanceBlocks (marks the miss that broke a streak separately). */
+  sessions: { date: string; value: number | null }[];
 }
 
 export interface AttendanceResponse {
@@ -197,6 +216,60 @@ export interface AttendanceResponse {
 
 export function getOwnProfile(): Promise<OwnProfileEntry[]> {
   return request<OwnProfileEntry[]>("/member/profile");
+}
+
+export interface AllianceInfo {
+  name: string | null;
+  tag: string | null;
+  state: number | null;
+  memberCount: number;
+}
+
+export function getAllianceInfo(allianceId: number): Promise<AllianceInfo> {
+  return request<AllianceInfo>(`/alliance/${allianceId}`);
+}
+
+export type AllianceGoalMetric = "vault" | "capitol" | "turnout" | "perfect";
+export type AllianceGoalCycleKind = "window" | "monthly" | "rolling7";
+
+export interface AllianceGoal {
+  metric: AllianceGoalMetric;
+  target: number;
+  cycleKind: AllianceGoalCycleKind;
+  startsOn: string;
+  endsOn: string | null;
+  repeats: boolean;
+  visibility: "everyone" | "officers";
+  createdBy: string | null;
+  createdAt: string | null;
+  /** Summed fresh from session data at read time -- never stored. */
+  progress: number;
+  windowStartsOn: string;
+  windowEndsOn: string;
+}
+
+/** Null means "no goal configured" (or hidden from this caller) -- render
+ * no panel at all, never an empty one. */
+export function getAllianceGoal(allianceId: number): Promise<AllianceGoal | null> {
+  return request<AllianceGoal | null>(`/alliance/${allianceId}/goal`);
+}
+
+export interface AllianceGoalInput {
+  metric: AllianceGoalMetric;
+  target: number;
+  cycleKind: AllianceGoalCycleKind;
+  startsOn: string;
+  endsOn?: string | null;
+  repeats?: boolean;
+  visibility?: "everyone" | "officers";
+}
+
+export function saveAllianceGoal(allianceId: number, input: AllianceGoalInput): Promise<{ ok: true }> {
+  return request(`/admin/alliances/${allianceId}/goal`, { method: "PUT", body: JSON.stringify(input) });
+}
+
+export function deleteAllianceGoal(allianceId: number): Promise<void> {
+  return request(`/admin/alliances/${allianceId}/goal`, { method: "DELETE" });
 }
 
 export function getAllianceMembers(allianceId: number, includeInactive = false): Promise<RosterMember[]> {

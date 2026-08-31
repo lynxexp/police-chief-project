@@ -1,19 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useOutletContext } from "react-router-dom";
+import { Users, Hash, Bell, CalendarDays, ClipboardList, ChevronRight } from "lucide-react";
 import Layout from "../components/Layout";
-import {
-  getAdminAlliances,
-  getRegisterSettings,
-  updateRegisterSettings,
-  type AuthContext,
-} from "../api/client";
-import { Card, EmptyState, ErrorState, LoadingState, SectionHeading } from "../components/ui";
+import { getAdminAlliances, getRegisterSettings, updateRegisterSettings, type AuthContext } from "../api/client";
+import { Card, EmptyState, ErrorState, LoadingRows, SectionHeading, Toggle } from "../components/ui";
+
+const DESTINATIONS = (allianceId: number) => [
+  { to: `/admin/alliances/${allianceId}/members`, label: "Manage members", icon: Users },
+  { to: `/admin/alliances/${allianceId}/settings`, label: "Channel setup", icon: Hash },
+  { to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications", icon: Bell },
+  { to: `/admin/alliances/${allianceId}/custom-events`, label: "Custom events", icon: CalendarDays },
+  { to: `/admin/alliances/${allianceId}/schedule-boards`, label: "Schedule boards", icon: ClipboardList },
+];
 
 /** Entry point for admins: the alliances they can manage (all of them,
  * for Owner/Global tier -- see routes/admin.ts's getAdminAlliances). */
 export default function AdminAlliances() {
   const ctx = useOutletContext<AuthContext>();
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin-alliances"],
     queryFn: getAdminAlliances,
   });
@@ -32,43 +36,46 @@ export default function AdminAlliances() {
   return (
     <Layout title="Admin" backTo={{ to: "/", label: "Your profile" }}>
       {ctx.isGlobal && registerSettings.data && (
-        <label className="mb-6 flex w-fit items-center gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
-          <input
-            type="checkbox"
+        <div className="flex items-center justify-between gap-4 rounded-card border border-down-border bg-down-tint px-4 py-3">
+          <div>
+            <p className="font-mono text-[11px] font-semibold tracking-pill text-down-ink uppercase">Server-wide</p>
+            <p className="mt-0.5 text-sm text-ink-secondary">Self-registration (/register) enabled bot-wide</p>
+          </div>
+          <Toggle
             checked={registerSettings.data.enabled}
-            onChange={(e) => toggleRegister.mutate(e.target.checked)}
+            onChange={(v) => toggleRegister.mutate(v)}
             disabled={toggleRegister.isPending}
-            className="rounded border-slate-700 bg-slate-950"
+            label="Self-registration enabled bot-wide"
           />
-          Self-registration (/register) enabled bot-wide
-        </label>
+        </div>
       )}
 
       <SectionHeading>Alliances you administer</SectionHeading>
-      {isLoading && <LoadingState />}
-      {error && <ErrorState message="Couldn't load alliances." />}
-      {data && data.length === 0 && <EmptyState icon="🏛️">No alliances assigned to you.</EmptyState>}
+      {isLoading && <LoadingRows rows={3} />}
+      {error && <ErrorState message="Couldn't load alliances." onRetry={refetch} />}
+      {data && data.length === 0 && <EmptyState>No alliances assigned to you.</EmptyState>}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         {data?.map((a) => (
-          <Card key={a.allianceId}>
-            <div className="font-medium">{a.name ?? `Alliance ${a.allianceId}`}</div>
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-              <Link to={`/admin/alliances/${a.allianceId}/members`} className="text-slate-500 hover:text-slate-300">
-                Manage members →
-              </Link>
-              <Link to={`/admin/alliances/${a.allianceId}/settings`} className="text-slate-500 hover:text-slate-300">
-                Channel setup →
-              </Link>
-              <Link to={`/admin/alliances/${a.allianceId}/notifications`} className="text-slate-500 hover:text-slate-300">
-                Notifications →
-              </Link>
-              <Link to={`/admin/alliances/${a.allianceId}/custom-events`} className="text-slate-500 hover:text-slate-300">
-                Custom events →
-              </Link>
-              <Link to={`/admin/alliances/${a.allianceId}/schedule-boards`} className="text-slate-500 hover:text-slate-300">
-                Schedule boards →
-              </Link>
+          <Card key={a.allianceId} className="p-0">
+            <p className="border-b border-line-hairline px-4 py-3 font-display text-lg font-semibold text-ink">
+              {a.name ?? `Alliance ${a.allianceId}`}
+            </p>
+            <div className="flex flex-col">
+              {DESTINATIONS(a.allianceId).map((d) => {
+                const Icon = d.icon;
+                return (
+                  <Link
+                    key={d.to}
+                    to={d.to}
+                    className="flex min-h-11 items-center gap-2.5 border-b border-line-hairline px-4 text-sm text-ink-secondary last:border-b-0 hover:bg-white/[.03] hover:text-ink"
+                  >
+                    <Icon size={16} strokeWidth={1.75} aria-hidden="true" />
+                    <span className="flex-1">{d.label}</span>
+                    <ChevronRight size={16} strokeWidth={1.75} className="text-ink-faint" aria-hidden="true" />
+                  </Link>
+                );
+              })}
             </div>
           </Card>
         ))}

@@ -7,6 +7,7 @@ import EmbedFieldsForm, {
   type EmbedDraft,
 } from "./EmbedFieldsForm";
 import { defaultPlaceholderSample } from "./DiscordEmbedPreview";
+import { Pill, SectionHeading, Toggle } from "./ui";
 
 const NOTIFICATION_TYPES: { value: number; label: string }[] = [
   { value: 1, label: "30, 10, 5 min before + at time" },
@@ -155,6 +156,32 @@ export function isDraftValid(draft: CustomEventDraft): boolean {
   return true;
 }
 
+/** Next 3 UTC occurrences from the draft's schedule -- a quick sanity
+ * check while editing, not a guarantee (the real engine is
+ * calculate_next_occurrence() on the bot side; monthly there is
+ * calendar-aware, this approximates it the same simple way). */
+function nextOccurrences(draft: CustomEventDraft, count = 3): Date[] {
+  const [h, m] = draft.time.split(":").map(Number);
+  const first = new Date(`${draft.date}T00:00:00Z`);
+  first.setUTCHours(h || 0, m || 0, 0, 0);
+  const out: Date[] = [];
+  const step = (d: Date) => {
+    const next = new Date(d);
+    if (draft.recurrenceType === "daily") next.setUTCDate(next.getUTCDate() + draft.recurrenceInterval);
+    else if (draft.recurrenceType === "weekly") next.setUTCDate(next.getUTCDate() + draft.recurrenceInterval * 7);
+    else next.setUTCMonth(next.getUTCMonth() + draft.recurrenceInterval);
+    return next;
+  };
+  let cur = first;
+  for (let i = 0; i < count; i++) {
+    out.push(cur);
+    cur = step(cur);
+  }
+  return out;
+}
+
+const fieldClass = "w-full rounded-control border border-line bg-surface-sunken px-3 py-1.5 text-sm text-ink";
+
 export default function CustomEventForm({
   draft,
   onChange,
@@ -168,118 +195,84 @@ export default function CustomEventForm({
     onChange({ ...draft, [key]: value });
 
   return (
-    <div className="space-y-3">
-      <div>
-        <label className="mb-1 block text-xs text-slate-400">
-          Name
-          <input
-            value={draft.name}
-            onChange={(e) => set("name", e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-          />
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-3">
+        <SectionHeading>Identity</SectionHeading>
+        <label className="block">
+          <span className="mb-1 block text-xs text-ink-muted">Name</span>
+          <input value={draft.name} onChange={(e) => set("name", e.target.value)} className={fieldClass} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-ink-muted">Icon (single emoji, optional)</span>
+          <input value={draft.iconUrl} onChange={(e) => set("iconUrl", e.target.value)} placeholder="📅" maxLength={50} className={fieldClass} />
         </label>
       </div>
 
-      <div>
-        <label className="mb-1 block text-xs text-slate-400">
-          Icon (single emoji, optional)
-          <input
-            value={draft.iconUrl}
-            onChange={(e) => set("iconUrl", e.target.value)}
-            placeholder="📅"
-            maxLength={50}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-          />
-        </label>
-      </div>
-
-      <div className="border-t border-slate-800 pt-3">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Schedule</div>
+      <div className="flex flex-col gap-3 border-t border-line-hairline pt-4">
+        <SectionHeading>Recurrence</SectionHeading>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs text-slate-400">
-              First occurrence date (UTC)
-              <input
-                type="date"
-                value={draft.date}
-                onChange={(e) => set("date", e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              />
-            </label>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-slate-400">
-              Time (UTC)
-              <input
-                type="time"
-                value={draft.time}
-                onChange={(e) => set("time", e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              />
-            </label>
-          </div>
+          <label className="block">
+            <span className="mb-1 block text-xs text-ink-muted">First occurrence date (UTC)</span>
+            <input type="date" value={draft.date} onChange={(e) => set("date", e.target.value)} className={fieldClass} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-ink-muted">Time (UTC)</span>
+            <input type="time" value={draft.time} onChange={(e) => set("time", e.target.value)} className={fieldClass} />
+          </label>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs text-slate-400">
-              Repeats
-              <select
-                value={draft.recurrenceType}
-                onChange={(e) => set("recurrenceType", e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              >
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </label>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-slate-400">
-              Every N {draft.recurrenceType === "daily" ? "days" : draft.recurrenceType === "weekly" ? "weeks" : "months"}
-              <input
-                type="number"
-                min={1}
-                value={draft.recurrenceInterval}
-                onChange={(e) => set("recurrenceInterval", Number(e.target.value))}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              />
-            </label>
-          </div>
+        <div className="flex gap-1.5">
+          {(["daily", "weekly", "monthly"] as const).map((r) => (
+            <Pill key={r} active={draft.recurrenceType === r} onClick={() => set("recurrenceType", r)}>
+              {r}
+            </Pill>
+          ))}
         </div>
-      </div>
-
-      <div className="border-t border-slate-800 pt-3">
-        <label className="flex items-center gap-2 text-sm text-slate-300">
+        <label className="block max-w-xs">
+          <span className="mb-1 block text-xs text-ink-muted">
+            Every N {draft.recurrenceType === "daily" ? "days" : draft.recurrenceType === "weekly" ? "weeks" : "months"}
+          </span>
           <input
-            type="checkbox"
-            checked={draft.notificationsEnabled}
-            onChange={(e) => set("notificationsEnabled", e.target.checked)}
-            className="rounded border-slate-700 bg-slate-950"
+            type="number"
+            min={1}
+            value={draft.recurrenceInterval}
+            onChange={(e) => set("recurrenceInterval", Number(e.target.value))}
+            className={fieldClass}
           />
-          Post Discord notifications for this event
         </label>
-        <p className="mt-1 text-xs text-slate-500">
-          {draft.notificationsEnabled
-            ? "Set the channel, mention, reminder times, and message below."
-            : "Off -- this event is calendar-only. It still shows up on the member calendar, but nothing gets posted to Discord."}
-        </p>
+
+        {draft.date && (
+          <div className="rounded-control border border-line-hairline bg-surface-sunken p-3">
+            <p className="mb-1.5 font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">Next 3 occurrences</p>
+            <div className="flex flex-col gap-0.5 font-mono text-sm text-gold-ink">
+              {nextOccurrences(draft).map((d, i) => (
+                <span key={i}>{d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC</span>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-ink-faint">
+              Approximate -- monthly here is calendar-aware, while a notification's own interval repeat approximates 30 days.
+            </p>
+          </div>
+        )}
       </div>
 
-      {draft.notificationsEnabled && (
-        <div className="space-y-3 border-t border-slate-800 pt-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Discord settings</div>
-
+      <div className="rounded-card border border-gold-border">
+        <div className="flex items-center justify-between gap-3 bg-gold-tint px-4 py-3">
           <div>
-            <label className="mb-1 block text-xs text-slate-400">
-              Channel
-              <select
-                value={draft.channelId}
-                onChange={(e) => set("channelId", e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              >
-                <option value="">— select a channel —</option>
+            <p className="font-sans text-sm font-semibold text-ink">Post Discord notifications</p>
+            <p className="text-xs text-ink-muted">
+              {draft.notificationsEnabled ? "On — set the channel, mention, timing and message below." : "Off = calendar only, nothing posted to a channel."}
+            </p>
+          </div>
+          <Toggle checked={draft.notificationsEnabled} onChange={(v) => set("notificationsEnabled", v)} label="Post Discord notifications" />
+        </div>
+
+        {draft.notificationsEnabled && (
+          <div className="flex flex-col gap-3 p-4">
+            <label className="block">
+              <span className="mb-1 block text-xs text-ink-muted">Channel</span>
+              <select value={draft.channelId} onChange={(e) => set("channelId", e.target.value)} className={fieldClass}>
+                <option value="">Not set</option>
                 {channels?.map((c) => (
                   <option key={c.id} value={c.id}>
                     #{c.name}
@@ -287,118 +280,90 @@ export default function CustomEventForm({
                 ))}
               </select>
             </label>
-          </div>
 
-          <div>
-            <span className="mb-1 block text-xs text-slate-400">Mention</span>
-            <div className="flex gap-2">
-              <label className="sr-only" htmlFor="custom-event-mention-kind">
-                Mention type
-              </label>
-              <select
-                id="custom-event-mention-kind"
-                value={draft.mentionKind}
-                onChange={(e) => set("mentionKind", e.target.value as MentionKind)}
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              >
-                <option value="none">No mention</option>
-                <option value="everyone">@everyone</option>
-                <option value="role">Role</option>
-                <option value="member">Member</option>
-              </select>
-              {(draft.mentionKind === "role" || draft.mentionKind === "member") && (
-                <label className="sr-only" htmlFor="custom-event-mention-id">
-                  {draft.mentionKind === "role" ? "Role ID" : "Member ID"}
-                </label>
-              )}
-              {(draft.mentionKind === "role" || draft.mentionKind === "member") && (
-                <input
-                  id="custom-event-mention-id"
-                  value={draft.mentionId}
-                  onChange={(e) => set("mentionId", e.target.value)}
-                  placeholder={draft.mentionKind === "role" ? "Role ID" : "Member ID"}
-                  className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-                />
-              )}
+            <div>
+              <span className="mb-1 block text-xs text-ink-muted">Mention</span>
+              <div className="flex gap-2">
+                <select value={draft.mentionKind} onChange={(e) => set("mentionKind", e.target.value as MentionKind)} className={`${fieldClass} max-w-[10rem]`}>
+                  <option value="none">No mention</option>
+                  <option value="everyone">@everyone</option>
+                  <option value="role">Role</option>
+                  <option value="member">Member</option>
+                </select>
+                {(draft.mentionKind === "role" || draft.mentionKind === "member") && (
+                  <input
+                    value={draft.mentionId}
+                    onChange={(e) => set("mentionId", e.target.value)}
+                    placeholder={draft.mentionKind === "role" ? "Role ID" : "Member ID"}
+                    className={fieldClass}
+                  />
+                )}
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="mb-1 block text-xs text-slate-400">
-              Reminder offsets
-              <select
-                value={draft.notificationType}
-                onChange={(e) => set("notificationType", Number(e.target.value))}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              >
+            <div>
+              <span className="mb-1 block text-xs text-ink-muted">Reminder offsets</span>
+              <div className="flex flex-wrap gap-1.5">
                 {NOTIFICATION_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
+                  <Pill key={t.value} active={draft.notificationType === t.value} onClick={() => set("notificationType", t.value)}>
                     {t.label}
-                  </option>
+                  </Pill>
                 ))}
-              </select>
-            </label>
-            {draft.notificationType === 6 && (
-              <label className="mt-2 block">
-                <span className="sr-only">Custom reminder times, minutes before</span>
+              </div>
+              {draft.notificationType === 6 && (
                 <input
                   value={draft.customTimesText}
                   onChange={(e) => set("customTimesText", e.target.value)}
                   placeholder="30, 10, 5, 0"
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                  className={`${fieldClass} mt-2 font-mono`}
                 />
-              </label>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div>
-            <label className="mb-1 block text-xs text-slate-400">
-              Message type
-              <select
-                value={draft.messageKind}
-                onChange={(e) => set("messageKind", e.target.value as MessageKind)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
-              >
-                <option value="plain">Plain text</option>
-                <option value="embed">Embed</option>
-              </select>
-            </label>
-          </div>
-
-          {draft.messageKind === "plain" ? (
             <div>
-              <label className="mb-1 block text-xs text-slate-400">
-                Message (optional)
+              <span className="mb-1 block text-xs text-ink-muted">Message type</span>
+              <div className="flex gap-1.5">
+                <Pill active={draft.messageKind === "plain"} onClick={() => set("messageKind", "plain")}>
+                  Plain text
+                </Pill>
+                <Pill active={draft.messageKind === "embed"} onClick={() => set("messageKind", "embed")}>
+                  Embed
+                </Pill>
+              </div>
+            </div>
+
+            {draft.messageKind === "plain" ? (
+              <label className="block">
+                <span className="mb-1 block text-xs text-ink-muted">Message (optional)</span>
                 <textarea
                   value={draft.message}
                   onChange={(e) => set("message", e.target.value)}
                   rows={2}
                   placeholder="%i **%n** starts in %t!"
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100"
+                  className={fieldClass}
                 />
+                <p className="mt-1 font-mono text-[11px] text-ink-faint">
+                  Defaults to "%i **%n** starts in %t!" if left blank. %t %n %e %d %i and {"{tag}"} are substituted when sent.
+                </p>
               </label>
-              <p className="mt-1 text-xs text-slate-500">
-                Defaults to "%i **%n** starts in %t!" if left blank. Placeholders like %t/%n/%e/%d/%i and{" "}
-                {"{tag}"} are substituted when the bot sends this.
-              </p>
-            </div>
-          ) : (
-            <EmbedFieldsForm
-              draft={draft.embed}
-              onChange={(embed) => set("embed", embed)}
-              sample={defaultPlaceholderSample({
-                eventName: draft.name.trim() || "Event",
-                eventTime: draft.time,
-                eventDate: new Date(`${draft.date}T00:00:00Z`).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  timeZone: "UTC",
-                }),
-              })}
-            />
-          )}
-        </div>
-      )}
+            ) : (
+              <EmbedFieldsForm
+                draft={draft.embed}
+                onChange={(embed) => set("embed", embed)}
+                sample={defaultPlaceholderSample({
+                  eventName: draft.name.trim() || "Event",
+                  eventTime: draft.time,
+                  eventDate: new Date(`${draft.date}T00:00:00Z`).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    timeZone: "UTC",
+                  }),
+                })}
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
