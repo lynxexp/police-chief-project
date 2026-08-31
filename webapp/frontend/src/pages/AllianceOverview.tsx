@@ -4,6 +4,7 @@ import { Link, useOutletContext, useParams } from "react-router-dom";
 import {
   ResponsiveContainer,
   LineChart,
+  ComposedChart,
   Line,
   XAxis,
   YAxis,
@@ -384,7 +385,7 @@ export default function AllianceOverview() {
           </p>
           {vaultChartRows.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={vaultChartRows}>
+              <ComposedChart data={vaultChartRows}>
                 <defs>
                   <linearGradient id="vaultFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--info-ink)" stopOpacity={0.12} />
@@ -428,7 +429,7 @@ export default function AllianceOverview() {
                     />
                   ),
                 )}
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           ) : (
             <p className="text-sm text-ink-muted">No vault hunts recorded yet.</p>
@@ -448,10 +449,10 @@ export default function AllianceOverview() {
                   <div key={m.fid} className="grid grid-cols-[1fr_auto] items-center gap-2">
                     <span className="truncate font-sans text-sm text-ink-secondary">{m.nickname ?? `FID ${m.fid}`}</span>
                     <span className="w-10 shrink-0 text-right font-mono text-xs text-ink-muted">
-                      {Math.round(m.attendanceRate)}%
+                      {Math.round(m.attendanceRate * 100)}%
                     </span>
                     <div className="col-span-2">
-                      <ProgressTrack pct={m.attendanceRate} tone={m.attendanceRate >= 80 ? "up" : "gold"} height={6} />
+                      <ProgressTrack pct={m.attendanceRate * 100} tone={m.attendanceRate >= 0.8 ? "up" : "gold"} height={6} />
                     </div>
                   </div>
                 ))}
