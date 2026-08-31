@@ -32,6 +32,10 @@ The dashboard enforces the exact same rules as the Discord bot's `/settings`
 menu: what you can reach here is never more (or less) than what you could
 already do in Discord.
 
+A **Dark / Light** toggle sits at the bottom of the sidebar (in the mobile
+drawer too). It follows your OS setting until you pick one explicitly; your
+pick is then remembered in the browser and used every time you come back.
+
 ## For every member
 
 Nothing in this section requires any admin tier — just a Discord login and at
@@ -56,6 +60,11 @@ Shows:
   to open their member detail page.
 - Quick links to the Vault/Capitol leaderboards, attendance pages, and the
   event calendar.
+- An **Alliance Goal** panel, if an admin has set one — a Vault Trap or
+  Capitol War target with progress computed live from the same session data
+  as the leaderboards, so it never disagrees with them. Hidden entirely when
+  no goal is set. Alliance-tier admins and up can set, edit, or clear it from
+  a button on this same page.
 
 ### Leaderboards
 
