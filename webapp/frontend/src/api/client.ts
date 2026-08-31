@@ -218,6 +218,36 @@ export function getOwnProfile(): Promise<OwnProfileEntry[]> {
   return request<OwnProfileEntry[]>("/member/profile");
 }
 
+// ---------------------------------------------------------------------------
+// Self-service registration (see routes/registration.ts) -- the web
+// equivalent of Discord's /register, for a signed-in user with no
+// characters linked yet.
+// ---------------------------------------------------------------------------
+
+export interface RegistrableAlliance {
+  id: number;
+  name: string | null;
+  tag: string | null;
+}
+
+export function getRegistrableAlliances(): Promise<RegistrableAlliance[]> {
+  return request<RegistrableAlliance[]>("/register/alliances");
+}
+
+export interface RegisterCharacterInput {
+  fid: number;
+  allianceId: number;
+  name: string;
+  state?: number;
+  level?: number;
+}
+
+export function registerCharacter(
+  input: RegisterCharacterInput,
+): Promise<{ ok: true; action: "registered" | "linked" | "already_linked" }> {
+  return request("/register", { method: "POST", body: JSON.stringify(input) });
+}
+
 export interface AllianceInfo {
   name: string | null;
   tag: string | null;

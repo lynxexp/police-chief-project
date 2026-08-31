@@ -6,8 +6,10 @@ this page.
 ## Getting started: link your in-game ID
 
 When you join a server running this bot, you may get a DM prompting you to
-register (only if the server's admin has self-registration turned on). Either
-way, run:
+register (only if the server's admin has self-registration turned on). You
+can register either from Discord or, if the [web dashboard](webapp-guide.md)
+is running, straight from your profile page there the first time you sign
+in — both do the same thing. From Discord, run:
 
 ```
 /register id:<your in-game ID> alliance:<pick from the list> name:<your in-game name>

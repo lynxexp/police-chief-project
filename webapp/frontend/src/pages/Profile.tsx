@@ -1,10 +1,135 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOutletContext, Link } from "react-router-dom";
 import Layout from "../components/Layout";
-import { getOwnProfile, type AuthContext, type OwnProfileEntry } from "../api/client";
-import { EmptyState, ErrorState, LoadingRows, ProgressTrack, Shield } from "../components/ui";
+import {
+  getOwnProfile,
+  getRegistrableAlliances,
+  registerCharacter,
+  type AuthContext,
+  type OwnProfileEntry,
+} from "../api/client";
+import { Card, ErrorState, LoadingRows, ProgressTrack, Shield, buttonPrimary } from "../components/ui";
 import { attendanceRate, deltaVsLast, personalBest, streak } from "../hooks/engagement";
+
+const REGISTER_ERROR_MESSAGES: Record<string, string> = {
+  registration_disabled: "Registration is currently turned off. Ask an admin to enable it.",
+  alliance_not_found: "Pick an alliance from the list.",
+  fid_already_registered:
+    "This ID is already registered to another Discord account. Contact an admin if this needs to be fixed.",
+  state_required: "This alliance doesn't have a home state on file yet -- enter your state number below.",
+  state_locked: "This alliance only accepts members from its own home state -- check your state number.",
+};
+
+/** First-time registration, for a signed-in Discord user with no
+ * characters linked yet -- the web equivalent of Discord's /register.
+ * If the ID already exists in the database (an admin add, or a leftover
+ * from before this person registered) the backend just links it to this
+ * Discord account instead of creating a duplicate row. */
+function RegisterCharacterForm() {
+  const queryClient = useQueryClient();
+  const alliances = useQuery({ queryKey: ["registrable-alliances"], queryFn: getRegistrableAlliances });
+  const [fid, setFid] = useState("");
+  const [allianceId, setAllianceId] = useState("");
+  const [name, setName] = useState("");
+  const [state, setState] = useState("");
+  const [level, setLevel] = useState("");
+
+  const registerMutation = useMutation({
+    mutationFn: () =>
+      registerCharacter({
+        fid: Number(fid),
+        allianceId: Number(allianceId),
+        name: name.trim(),
+        state: state ? Number(state) : undefined,
+        level: level ? Number(level) : undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+    },
+  });
+
+  const fieldClass = "mt-1 w-full rounded-control border border-line bg-surface-sunken px-3 py-1.5 text-sm text-ink";
+  const canSubmit = fid.trim() !== "" && allianceId !== "" && name.trim() !== "";
+  const errorMessage = registerMutation.isError
+    ? REGISTER_ERROR_MESSAGES[(registerMutation.error as Error).message] ?? (registerMutation.error as Error).message
+    : null;
+
+  return (
+    <Card>
+      <p className="font-display text-[17px] font-semibold tracking-heading text-ink uppercase">Link your in-game ID</p>
+      <p className="mt-1 text-sm text-ink-muted">
+        No characters are linked to your Discord account yet. Enter your in-game ID to link one -- if it's already in
+        our database, we'll just attach it to your account.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-xs text-ink-muted">In-game ID</span>
+          <input
+            type="number"
+            value={fid}
+            onChange={(e) => setFid(e.target.value)}
+            placeholder="e.g. 123456789"
+            className={fieldClass}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-ink-muted">Alliance</span>
+          <select value={allianceId} onChange={(e) => setAllianceId(e.target.value)} className={fieldClass}>
+            <option value="">Select your alliance…</option>
+            {alliances.data?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+                {a.tag ? ` [${a.tag}]` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="text-xs text-ink-muted">Your in-game name</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your Discord name often doesn't match this"
+            className={fieldClass}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-ink-muted">Chief's Office level (optional)</span>
+          <input
+            type="number"
+            min={0}
+            max={45}
+            value={level}
+            onChange={(e) => setLevel(e.target.value)}
+            className={fieldClass}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-ink-muted">State number (only if asked)</span>
+          <input
+            type="number"
+            value={state}
+            onChange={(e) => setState(e.target.value)}
+            placeholder="e.g. 911"
+            className={fieldClass}
+          />
+        </label>
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={() => registerMutation.mutate()}
+          disabled={!canSubmit || registerMutation.isPending}
+          className={buttonPrimary}
+        >
+          {registerMutation.isPending ? "Linking…" : "Link this ID"}
+        </button>
+        {errorMessage && <span className="text-xs text-down-ink">{errorMessage}</span>}
+      </div>
+    </Card>
+  );
+}
 
 function compact(n: number | null): string {
   if (n === null) return "—";
@@ -182,12 +307,7 @@ export default function Profile() {
     <Layout title="Your profile" eyebrow={`SIGNED IN AS ${ctx.discordId} · ${data?.length ?? 0} CHARACTERS LINKED`}>
       {isLoading && <LoadingRows rows={2} />}
       {error && <ErrorState message="Couldn't load your profile." onRetry={refetch} />}
-      {data && data.length === 0 && (
-        <EmptyState>
-          No characters are linked to your Discord account yet. Use{" "}
-          <code className="font-mono text-info-ink">/register</code> in Discord to link one.
-        </EmptyState>
-      )}
+      {data && data.length === 0 && <RegisterCharacterForm />}
 
       {sortedByPrimary && sortedByPrimary.length > 0 && (
         <div className="flex flex-col gap-5">

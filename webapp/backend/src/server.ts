@@ -14,6 +14,7 @@ import csrfPlugin from "./plugins/csrf.js";
 import staticPlugin from "./plugins/static.js";
 import authRoutes from "./routes/auth.js";
 import memberRoutes from "./routes/member.js";
+import registrationRoutes from "./routes/registration.js";
 import calendarRoutes from "./routes/calendar.js";
 import calendarFeedRoutes from "./routes/calendarFeed.js";
 import adminRoutes from "./routes/admin.js";
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   });
   await fastify.register(authRoutes, { prefix: "/api/auth" });
   await fastify.register(memberRoutes, { prefix: "/api" });
+  await fastify.register(registrationRoutes, { prefix: "/api" });
   await fastify.register(calendarRoutes, { prefix: "/api" });
   await fastify.register(calendarFeedRoutes, { prefix: "/api" });
   await fastify.register(adminRoutes, { prefix: "/api" });

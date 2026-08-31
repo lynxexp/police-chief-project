@@ -21,9 +21,15 @@ isn't a separate account system, it's your existing Discord identity.
   signing out and back in (or by revisiting that picker if you administer
   guilds you haven't picked yet).
 - If you're not an admin anywhere and have no in-game IDs linked to your
-  Discord account, you'll see an empty profile page — that's expected, there's
-  nothing to show yet. Link an ID with `/register` in Discord first (see the
-  [User Guide](user-guide.md#getting-started-link-your-in-game-id)).
+  Discord account, your profile page shows a **Link your in-game ID** form
+  instead of a character card — enter your ID, pick your alliance, and type
+  your in-game name (your Discord name usually doesn't match it). If that ID
+  is already in our database — added by an admin, or left over from before
+  you registered — it's just attached to your Discord account instead of
+  creating a duplicate. This is the same registration `/register` does in
+  Discord (see the [User Guide](user-guide.md#getting-started-link-your-in-game-id)); use whichever is convenient.
+  A **State number** field only matters if your alliance doesn't have a home
+  state on file yet — the form will say so if it's needed.
 
 Every page in the dashboard shows your current **permission tier** (None /
 Alliance / Server / Global / Owner) in the top-right corner — the same four
