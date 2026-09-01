@@ -156,6 +156,26 @@ inactive status. Search by name or fid. Actions per member:
   in-game ID with a specific Discord user ID and server ID (mostly useful
   for fixing a mismatch or setting one up on a member's behalf).
 
+### Vault Trap records
+
+`Admin → pick an alliance → Vault Trap records`. Full edit access to every
+recorded Vault Trap hunt — the same records that power the leaderboard,
+attendance, and trend charts, so a fix here shows up everywhere else
+immediately. Lists every hunt (date, trap, rallies, total damage, player
+count); filter by trap if the alliance runs more than one. Open a hunt to:
+
+- Edit its **date, trap number, rallies, and total damage**.
+- Edit any player's **damage** or **rank** inline, or **reassign** their row
+  to a different member (or to "unmatched") via the dropdown.
+- **Remove** a player from the hunt, or **add** one — pick from the roster,
+  or type a name for someone not in it.
+- **Delete the entire hunt**, including all of its player records. This
+  cannot be undone.
+
+Total damage and rallies are independent fields, not auto-summed from the
+player rows — the same as Discord's own record editor, since a screenshot
+rarely captures every participant.
+
 ### Channel setup
 
 `Alliance members → Channel setup`. One page covering several independent

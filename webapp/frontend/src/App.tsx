@@ -26,6 +26,8 @@ import AdminCustomEvents from "./pages/AdminCustomEvents";
 import AdminCustomEventCreate from "./pages/AdminCustomEventCreate";
 import AdminCustomEventDetail from "./pages/AdminCustomEventDetail";
 import AdminScheduleBoards from "./pages/AdminScheduleBoards";
+import AdminVaultHunts from "./pages/AdminVaultHunts";
+import AdminVaultHuntDetail from "./pages/AdminVaultHuntDetail";
 import CalendarPage from "./pages/Calendar";
 import ElectroBuildingCalculator from "./pages/ElectroBuildingCalculator";
 
@@ -79,6 +81,8 @@ export default function App() {
             <Route path="/admin/alliances/:allianceId/custom-events/new" element={<AdminCustomEventCreate />} />
             <Route path="/admin/alliances/:allianceId/custom-events/:id" element={<AdminCustomEventDetail />} />
             <Route path="/admin/alliances/:allianceId/schedule-boards" element={<AdminScheduleBoards />} />
+            <Route path="/admin/alliances/:allianceId/vault-hunts" element={<AdminVaultHunts />} />
+            <Route path="/admin/alliances/:allianceId/vault-hunts/:huntId" element={<AdminVaultHuntDetail />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useOutletContext } from "react-router-dom";
-import { Users, Hash, Bell, CalendarDays, ClipboardList, ChevronRight } from "lucide-react";
+import { Users, Hash, Bell, CalendarDays, ClipboardList, Vault, ChevronRight } from "lucide-react";
 import Layout from "../components/Layout";
 import { getAdminAlliances, getRegisterSettings, updateRegisterSettings, type AuthContext } from "../api/client";
 import { Card, EmptyState, ErrorState, LoadingRows, SectionHeading, Toggle } from "../components/ui";
 
 const DESTINATIONS = (allianceId: number) => [
   { to: `/admin/alliances/${allianceId}/members`, label: "Manage members", icon: Users },
+  { to: `/admin/alliances/${allianceId}/vault-hunts`, label: "Vault Trap records", icon: Vault },
   { to: `/admin/alliances/${allianceId}/settings`, label: "Channel setup", icon: Hash },
   { to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications", icon: Bell },
   { to: `/admin/alliances/${allianceId}/custom-events`, label: "Custom events", icon: CalendarDays },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOutletContext, useParams } from "react-router-dom";
 import { Search } from "lucide-react";
@@ -13,7 +13,7 @@ import {
   type AdminMember,
   type AuthContext,
 } from "../api/client";
-import { ErrorState, LoadingRows, Pill, buttonPrimary, buttonSecondary } from "../components/ui";
+import { EditableNumberCell, ErrorState, LoadingRows, Pill, buttonPrimary, buttonSecondary } from "../components/ui";
 
 const TIER_LABELS: Record<AuthContext["tier"], string> = {
   owner: "Owner",
@@ -226,56 +226,6 @@ export default function AdminMembers() {
         </div>
       )}
     </Layout>
-  );
-}
-
-/** Click-to-edit number cell: local draft state so typing doesn't fight a
- * server round-trip, committed onBlur only when the value actually
- * changed (matches the backend's own compare-before-write + history-log
- * behavior -- see admin.ts's PATCH .../members/:fid). */
-function EditableNumberCell({
-  value,
-  onSave,
-  min,
-  max,
-  disabled,
-}: {
-  value: number | null;
-  onSave: (v: number) => void;
-  min?: number;
-  max?: number;
-  disabled?: boolean;
-}) {
-  const [draft, setDraft] = useState(value !== null ? String(value) : "");
-  useEffect(() => {
-    setDraft(value !== null ? String(value) : "");
-  }, [value]);
-
-  const commit = () => {
-    const trimmed = draft.trim();
-    if (trimmed === "") {
-      setDraft(value !== null ? String(value) : "");
-      return;
-    }
-    const n = Number(trimmed);
-    if (!Number.isInteger(n) || n === value) return;
-    onSave(n);
-  };
-
-  return (
-    <input
-      type="number"
-      min={min}
-      max={max}
-      value={draft}
-      disabled={disabled}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-      }}
-      className="w-20 rounded-control border border-line bg-surface-sunken px-2 py-1 font-mono text-ink-secondary focus:border-gold-border disabled:opacity-50"
-    />
   );
 }
 

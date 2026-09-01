@@ -562,6 +562,99 @@ export function editMember(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Vault Trap record editing (see routes/vaultAdmin.ts) -- full CRUD over
+// persisted hunts and their per-player damage rows, for fixing up a
+// record after the fact without needing Discord's OCR-repair UI.
+// ---------------------------------------------------------------------------
+
+export interface AdminVaultHuntSummary {
+  id: number;
+  date: string;
+  trapNumber: number;
+  rallies: number | null;
+  totalDamage: number | null;
+  eventTime: string | null;
+  playerCount: number;
+}
+
+export interface AdminVaultHuntPlayer {
+  id: number;
+  fid: number | null;
+  name: string | null;
+  damage: number;
+  rank: number | null;
+  matchScore: number | null;
+}
+
+export interface AdminVaultHuntDetail {
+  id: number;
+  date: string;
+  trapNumber: number;
+  rallies: number | null;
+  totalDamage: number | null;
+  eventTime: string | null;
+  players: AdminVaultHuntPlayer[];
+}
+
+export function getAdminVaultHunts(
+  allianceId: number,
+  opts?: { trap?: number; limit?: number; offset?: number },
+): Promise<{ total: number; hunts: AdminVaultHuntSummary[] }> {
+  const params = new URLSearchParams();
+  if (opts?.trap !== undefined) params.set("trap", String(opts.trap));
+  if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return request(`/admin/alliances/${allianceId}/vault-hunts${qs ? `?${qs}` : ""}`);
+}
+
+export function getAdminVaultHunt(allianceId: number, huntId: number): Promise<AdminVaultHuntDetail> {
+  return request(`/admin/alliances/${allianceId}/vault-hunts/${huntId}`);
+}
+
+export function updateVaultHunt(
+  allianceId: number,
+  huntId: number,
+  edits: { date?: string; trapNumber?: number; rallies?: number | null; totalDamage?: number | null },
+): Promise<{ ok: true }> {
+  return request(`/admin/alliances/${allianceId}/vault-hunts/${huntId}`, {
+    method: "PATCH",
+    body: JSON.stringify(edits),
+  });
+}
+
+export function deleteVaultHunt(allianceId: number, huntId: number): Promise<{ ok: true }> {
+  return request(`/admin/alliances/${allianceId}/vault-hunts/${huntId}`, { method: "DELETE" });
+}
+
+export function addVaultHuntPlayer(
+  allianceId: number,
+  huntId: number,
+  input: { fid?: number; name?: string; damage: number; rank?: number | null },
+): Promise<{ ok: true; id: number }> {
+  return request(`/admin/alliances/${allianceId}/vault-hunts/${huntId}/players`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateVaultHuntPlayer(
+  allianceId: number,
+  huntId: number,
+  rowId: number,
+  edits: { fid?: number | null; damage?: number; rank?: number | null },
+): Promise<{ ok: true }> {
+  return request(`/admin/alliances/${allianceId}/vault-hunts/${huntId}/players/${rowId}`, {
+    method: "PATCH",
+    body: JSON.stringify(edits),
+  });
+}
+
+export function deleteVaultHuntPlayer(allianceId: number, huntId: number, rowId: number): Promise<{ ok: true }> {
+  return request(`/admin/alliances/${allianceId}/vault-hunts/${huntId}/players/${rowId}`, { method: "DELETE" });
+}
+
 export interface AllianceSettings {
   channelId: string | null;
   redemptionChannelId: string | null;

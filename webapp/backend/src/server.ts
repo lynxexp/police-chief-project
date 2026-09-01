@@ -18,6 +18,7 @@ import registrationRoutes from "./routes/registration.js";
 import calendarRoutes from "./routes/calendar.js";
 import calendarFeedRoutes from "./routes/calendarFeed.js";
 import adminRoutes from "./routes/admin.js";
+import vaultAdminRoutes from "./routes/vaultAdmin.js";
 import giftCodeRoutes from "./routes/giftcodes.js";
 import idChannelRoutes from "./routes/idchannel.js";
 import backupRoutes from "./routes/backups.js";
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
   await fastify.register(calendarRoutes, { prefix: "/api" });
   await fastify.register(calendarFeedRoutes, { prefix: "/api" });
   await fastify.register(adminRoutes, { prefix: "/api" });
+  await fastify.register(vaultAdminRoutes, { prefix: "/api" });
   await fastify.register(giftCodeRoutes, { prefix: "/api" });
   await fastify.register(idChannelRoutes, { prefix: "/api" });
   await fastify.register(backupRoutes, { prefix: "/api" });
