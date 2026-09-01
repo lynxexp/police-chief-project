@@ -18,8 +18,10 @@ import {
   DatabaseBackup,
   ClipboardList,
   Calculator,
+  Vault,
 } from "lucide-react";
 import type { AuthContext } from "../api/client";
+import { useFallbackAllianceIds } from "../hooks/fallbackAlliance";
 
 interface NavItem {
   to: string;
@@ -90,7 +92,24 @@ const PUBLIC_TOOLS: NavItem[] = [
  * rendering <Layout> -- no per-page wiring. */
 export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; onNavigate: () => void }) {
   const location = useLocation();
-  const { allianceId } = useParams<{ allianceId?: string }>();
+  const { allianceId: routeAllianceId } = useParams<{ allianceId?: string }>();
+  // Falls back to the user's own alliance when there's no :allianceId
+  // route param to read one from (chiefly the profile page) -- without
+  // this, "This alliance"/"Manage this alliance" just vanish there, even
+  // for someone who only has (or only manages) exactly one. See
+  // hooks/fallbackAlliance.ts for why member vs admin need separate
+  // fallbacks.
+  const fallbackAllianceIds = useFallbackAllianceIds({
+    enabled: Boolean(ctx) && !routeAllianceId,
+    isAdmin: Boolean(ctx && ctx.tier !== "none"),
+  });
+  const memberAllianceId =
+    routeAllianceId ??
+    (fallbackAllianceIds.played != null ? String(fallbackAllianceIds.played) : undefined);
+  const manageAllianceId =
+    routeAllianceId ??
+    (fallbackAllianceIds.managed != null ? String(fallbackAllianceIds.managed) : undefined) ??
+    memberAllianceId;
 
   if (!ctx) {
     return (
@@ -119,29 +138,30 @@ export function SidebarContent({ ctx, onNavigate }: { ctx: AuthContext | null; o
     },
   ];
 
-  if (allianceId) {
+  if (memberAllianceId) {
     sections.push({
       heading: "This alliance",
       items: [
-        { to: `/alliance/${allianceId}`, label: "Overview", icon: Gauge, exact: true },
-        { to: `/alliance/${allianceId}/leaderboard/vault`, label: "Leaderboard", icon: Trophy },
-        { to: `/alliance/${allianceId}/attendance/vault`, label: "Attendance", icon: CalendarCheck },
-        { to: `/alliance/${allianceId}/calendar`, label: "Calendar", icon: CalendarDays },
+        { to: `/alliance/${memberAllianceId}`, label: "Overview", icon: Gauge, exact: true },
+        { to: `/alliance/${memberAllianceId}/leaderboard/vault`, label: "Leaderboard", icon: Trophy },
+        { to: `/alliance/${memberAllianceId}/attendance/vault`, label: "Attendance", icon: CalendarCheck },
+        { to: `/alliance/${memberAllianceId}/calendar`, label: "Calendar", icon: CalendarDays },
       ],
     });
+  }
 
-    if (isAdmin) {
-      sections.push({
-        heading: "Manage this alliance",
-        items: [
-          { to: `/admin/alliances/${allianceId}/members`, label: "Members", icon: UsersRound },
-          { to: `/admin/alliances/${allianceId}/settings`, label: "Channel setup", icon: Hash },
-          { to: `/admin/alliances/${allianceId}/notifications`, label: "Notifications", icon: Bell },
-          { to: `/admin/alliances/${allianceId}/custom-events`, label: "Custom events", icon: CalendarDays },
-          { to: `/admin/alliances/${allianceId}/schedule-boards`, label: "Schedule boards", icon: ClipboardList },
-        ],
-      });
-    }
+  if (isAdmin && manageAllianceId) {
+    sections.push({
+      heading: "Manage this alliance",
+      items: [
+        { to: `/admin/alliances/${manageAllianceId}/members`, label: "Members", icon: UsersRound },
+        { to: `/admin/alliances/${manageAllianceId}/vault-hunts`, label: "Vault Trap records", icon: Vault },
+        { to: `/admin/alliances/${manageAllianceId}/settings`, label: "Channel setup", icon: Hash },
+        { to: `/admin/alliances/${manageAllianceId}/notifications`, label: "Notifications", icon: Bell },
+        { to: `/admin/alliances/${manageAllianceId}/custom-events`, label: "Custom events", icon: CalendarDays },
+        { to: `/admin/alliances/${manageAllianceId}/schedule-boards`, label: "Schedule boards", icon: ClipboardList },
+      ],
+    });
   }
 
   if (isAdmin) {

@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserRound, Trophy, CalendarDays, Gift, LogOut } from "lucide-react";
-import { logout, LOGIN_URL, getMyDisplayName, getOwnProfile, type AuthContext, type OwnProfileEntry } from "../api/client";
+import { logout, LOGIN_URL, getMyDisplayName, type AuthContext } from "../api/client";
 import { SidebarContent } from "./Sidebar";
 import { Shield, PageHeader } from "./ui";
 import { useThemePreference, type ThemeMode } from "../hooks/theme";
+import { useFallbackAllianceIds } from "../hooks/fallbackAlliance";
 
 const TIER_LABELS: Record<AuthContext["tier"], string> = {
   owner: "Owner",
@@ -204,24 +205,16 @@ export default function Layout({
   // alliance in scope to resolve to a real leaderboard/calendar. Outside
   // an alliance route (e.g. the profile page itself -- also the first
   // screen after login, so this matters a lot) there's no route param
-  // to read one from, so fall back to the same "primary character"
-  // alliance Profile.tsx itself highlights (highest power). Shares that
-  // page's own ["profile"] query/cache -- no extra fetch when Profile is
-  // the page actually mounted, since React Query dedupes by key.
+  // to read one from -- see hooks/fallbackAlliance.ts for the fallback.
   const showBottomTabs = Boolean(ctx) && !location.pathname.startsWith("/admin");
-  const profileForNav = useQuery({
-    queryKey: ["profile"],
-    queryFn: getOwnProfile,
+  const fallbackAllianceIds = useFallbackAllianceIds({
     enabled: showBottomTabs && !allianceId,
-    staleTime: 5 * 60 * 1000,
+    isAdmin: Boolean(ctx && ctx.tier !== "none"),
   });
-  const primaryAllianceId = (profileForNav.data ?? [])
-    .filter((e) => e.allianceId !== null)
-    .reduce<OwnProfileEntry | null>((best, e) => (best === null || (e.power ?? 0) > (best.power ?? 0) ? e : best), null)
-    ?.allianceId;
   const bottomTabHref = (tab: (typeof BOTTOM_TABS)[number]): string => {
     if ("to" in tab) return tab.to;
-    const targetAllianceId = allianceId ?? (primaryAllianceId != null ? String(primaryAllianceId) : undefined);
+    const fallback = fallbackAllianceIds.played ?? fallbackAllianceIds.managed;
+    const targetAllianceId = allianceId ?? (fallback != null ? String(fallback) : undefined);
     if (!targetAllianceId) return "/";
     return tab.key === "ranks" ? `/alliance/${targetAllianceId}/leaderboard/vault` : `/alliance/${targetAllianceId}/calendar`;
   };
