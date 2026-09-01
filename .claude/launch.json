@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "webapp/frontend", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "webapp-backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "webapp/backend", "run", "dev"],
+      "port": 3000
     }
   ]
 }
