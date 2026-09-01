@@ -551,6 +551,17 @@ export function unlinkMemberDiscord(allianceId: number, fid: number): Promise<{ 
   return request(`/admin/alliances/${allianceId}/members/${fid}/discord-link`, { method: "DELETE" });
 }
 
+export function editMember(
+  allianceId: number,
+  fid: number,
+  edits: { chiefOfficeLv?: number; power?: number },
+): Promise<{ ok: true; changed: string[] }> {
+  return request(`/admin/alliances/${allianceId}/members/${fid}`, {
+    method: "PATCH",
+    body: JSON.stringify(edits),
+  });
+}
+
 export interface AllianceSettings {
   channelId: string | null;
   redemptionChannelId: string | null;

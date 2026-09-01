@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOutletContext, useParams } from "react-router-dom";
 import { Search } from "lucide-react";
@@ -9,6 +9,7 @@ import {
   reactivateMember,
   linkMemberDiscord,
   unlinkMemberDiscord,
+  editMember,
   type AdminMember,
   type AuthContext,
 } from "../api/client";
@@ -72,7 +73,17 @@ export default function AdminMembers() {
       setLinkingFid(null);
     },
   });
-  const busy = deactivateMutation.isPending || reactivateMutation.isPending || unlinkMutation.isPending || linkMutation.isPending;
+  const editMutation = useMutation({
+    mutationFn: ({ fid, edits }: { fid: number; edits: { chiefOfficeLv?: number; power?: number } }) =>
+      editMember(allianceId, fid, edits),
+    onSuccess: invalidate,
+  });
+  const busy =
+    deactivateMutation.isPending ||
+    reactivateMutation.isPending ||
+    unlinkMutation.isPending ||
+    linkMutation.isPending ||
+    editMutation.isPending;
 
   return (
     <Layout
@@ -129,6 +140,7 @@ export default function AdminMembers() {
                 <tr className="bg-surface-header text-left font-mono text-[10px] tracking-eyebrow text-ink-faint uppercase">
                   <th className="px-4 py-2 font-medium">Name</th>
                   <th className="px-4 py-2 font-medium">Chief office lv</th>
+                  <th className="px-4 py-2 font-medium">Power</th>
                   <th className="px-4 py-2 font-medium">Kingdom</th>
                   <th className="px-4 py-2 font-medium">Discord</th>
                   <th className="px-4 py-2 font-medium">Actions</th>
@@ -147,6 +159,8 @@ export default function AdminMembers() {
                     onUnlink={() => unlinkMutation.mutate(m.fid)}
                     onDeactivate={() => deactivateMutation.mutate(m.fid)}
                     onReactivate={() => reactivateMutation.mutate(m.fid)}
+                    onEditChiefOfficeLv={(v) => editMutation.mutate({ fid: m.fid, edits: { chiefOfficeLv: v } })}
+                    onEditPower={(v) => editMutation.mutate({ fid: m.fid, edits: { power: v } })}
                     busy={busy}
                   />
                 ))}
@@ -164,7 +178,28 @@ export default function AdminMembers() {
                     {m.discordId ? "● linked" : "○ not linked"}
                   </span>
                 </div>
-                <p className="mt-0.5 font-mono text-xs text-ink-muted">fid {m.fid} · CO {m.chiefOfficeLv ?? "—"}</p>
+                <p className="mt-0.5 font-mono text-xs text-ink-muted">fid {m.fid}</p>
+                <div className="mt-2 flex items-center gap-3 text-xs text-ink-muted">
+                  <label className="flex items-center gap-1.5">
+                    CO
+                    <EditableNumberCell
+                      value={m.chiefOfficeLv}
+                      min={0}
+                      max={45}
+                      disabled={busy}
+                      onSave={(v) => editMutation.mutate({ fid: m.fid, edits: { chiefOfficeLv: v } })}
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    Power
+                    <EditableNumberCell
+                      value={m.power}
+                      min={0}
+                      disabled={busy}
+                      onSave={(v) => editMutation.mutate({ fid: m.fid, edits: { power: v } })}
+                    />
+                  </label>
+                </div>
                 <div className="mt-2 flex gap-2">
                   {m.isActive ? (
                     <button onClick={() => deactivateMutation.mutate(m.fid)} disabled={busy} className={`${buttonSecondary} min-h-11 flex-1`}>
@@ -194,6 +229,56 @@ export default function AdminMembers() {
   );
 }
 
+/** Click-to-edit number cell: local draft state so typing doesn't fight a
+ * server round-trip, committed onBlur only when the value actually
+ * changed (matches the backend's own compare-before-write + history-log
+ * behavior -- see admin.ts's PATCH .../members/:fid). */
+function EditableNumberCell({
+  value,
+  onSave,
+  min,
+  max,
+  disabled,
+}: {
+  value: number | null;
+  onSave: (v: number) => void;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState(value !== null ? String(value) : "");
+  useEffect(() => {
+    setDraft(value !== null ? String(value) : "");
+  }, [value]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed === "") {
+      setDraft(value !== null ? String(value) : "");
+      return;
+    }
+    const n = Number(trimmed);
+    if (!Number.isInteger(n) || n === value) return;
+    onSave(n);
+  };
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      value={draft}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      className="w-20 rounded-control border border-line bg-surface-sunken px-2 py-1 font-mono text-ink-secondary focus:border-gold-border disabled:opacity-50"
+    />
+  );
+}
+
 function MemberRow({
   member,
   zebra,
@@ -204,6 +289,8 @@ function MemberRow({
   onUnlink,
   onDeactivate,
   onReactivate,
+  onEditChiefOfficeLv,
+  onEditPower,
   busy,
 }: {
   member: AdminMember;
@@ -215,6 +302,8 @@ function MemberRow({
   onUnlink: () => void;
   onDeactivate: () => void;
   onReactivate: () => void;
+  onEditChiefOfficeLv: (v: number) => void;
+  onEditPower: (v: number) => void;
   busy: boolean;
 }) {
   const [discordId, setDiscordId] = useState("");
@@ -225,7 +314,12 @@ function MemberRow({
     <>
       <tr className={`${zebra ? "bg-surface-panel-alt" : ""} ${!member.isActive ? "text-ink-faint" : ""}`}>
         <td className="px-4 py-2">{member.nickname ?? "—"}</td>
-        <td className="px-4 py-2 font-mono text-ink-secondary">{member.chiefOfficeLv ?? "—"}</td>
+        <td className="px-4 py-2">
+          <EditableNumberCell value={member.chiefOfficeLv} min={0} max={45} disabled={busy} onSave={onEditChiefOfficeLv} />
+        </td>
+        <td className="px-4 py-2">
+          <EditableNumberCell value={member.power} min={0} disabled={busy} onSave={onEditPower} />
+        </td>
         <td className="px-4 py-2 font-mono text-ink-secondary">{member.kid ?? "—"}</td>
         <td className="px-4 py-2">
           <span className={`flex items-center gap-1 font-mono text-xs ${member.discordId ? "text-up-ink" : "text-down-ink"}`}>
@@ -261,7 +355,7 @@ function MemberRow({
       </tr>
       {isLinking && (
         <tr className="bg-surface-panel-alt">
-          <td colSpan={5} className="px-4 py-3">
+          <td colSpan={6} className="px-4 py-3">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <input
                 placeholder="Discord user ID"

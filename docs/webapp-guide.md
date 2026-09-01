@@ -147,6 +147,10 @@ backups.
 the member-facing roster doesn't: Discord link status, kingdom ID, active/
 inactive status. Search by name or fid. Actions per member:
 
+- **Chief's Office level** and **Power** are directly editable — click into
+  either cell, type a new value, and it saves when you click away (or press
+  Enter). Both changes are recorded in that member's change history, the
+  same as a Chief's Office edit made in Discord.
 - **Deactivate** / **Reactivate**.
 - **Link Discord…** / **Unlink Discord** — manually associate a member's
   in-game ID with a specific Discord user ID and server ID (mostly useful

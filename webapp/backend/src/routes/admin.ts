@@ -15,7 +15,7 @@
  * GET routes living alongside them in this same file.
  */
 import type { FastifyInstance } from "fastify";
-import { usersDb, allianceDb } from "../db/connections.js";
+import { usersDb, allianceDb, changesDb } from "../db/connections.js";
 import { snowflake } from "../db/snowflake.js";
 import {
   getAdminAlliances,
@@ -89,6 +89,17 @@ const discordLinkBody = {
   properties: {
     discordId: snowflakeString,
     serverId: snowflakeString,
+  },
+} as const;
+
+const memberEditBody = {
+  type: "object",
+  minProperties: 1,
+  properties: {
+    // Matches bot_level_mapping.py's MAX_CHIEF_OFFICE_LEVEL (0 is a valid
+    // level -- a brand-new Chief's Office).
+    chiefOfficeLv: { type: "integer", minimum: 0, maximum: 45 },
+    power: { type: "integer", minimum: 0 },
   },
 } as const;
 
@@ -324,6 +335,78 @@ export default async function adminRoutes(fastify: FastifyInstance): Promise<voi
         .where("fid", "=", fid)
         .execute();
       return { ok: true };
+    },
+  );
+
+  fastify.patch<{
+    Params: { allianceId: number; fid: number };
+    Body: { chiefOfficeLv?: number; power?: number };
+  }>(
+    "/admin/alliances/:allianceId/members/:fid",
+    { schema: { params: memberFidParams, body: memberEditBody }, preHandler: fastify.csrfProtection },
+    async (request, reply) => {
+      const ctx = request.authContext!;
+      const { allianceId, fid } = request.params;
+      const { chiefOfficeLv, power } = request.body;
+      if (!(await canManageAlliance(ctx.discordId, effectiveGuildId(ctx), allianceId))) {
+        return reply.code(403).send({ error: "not_alliance_admin" });
+      }
+      if (!(await memberBelongsToAlliance(fid, allianceId))) {
+        return reply.code(404).send({ error: "member_not_found" });
+      }
+
+      const current = await usersDb
+        .selectFrom("users")
+        .select(["chief_office_lv", "power"])
+        .where("fid", "=", fid)
+        .executeTakeFirst();
+      if (!current) {
+        return reply.code(404).send({ error: "member_not_found" });
+      }
+
+      // Mirrors apply_member_edit's compare-before-write: only touch a
+      // column (and log its history row) when the value actually changed.
+      const now = new Date().toISOString();
+      const changed: string[] = [];
+      const updates: { chief_office_lv?: number; power?: number; power_updated_at?: string } = {};
+
+      if (chiefOfficeLv !== undefined && chiefOfficeLv !== current.chief_office_lv) {
+        updates.chief_office_lv = chiefOfficeLv;
+        changed.push("chiefOfficeLv");
+      }
+      if (power !== undefined && power !== current.power) {
+        updates.power = power;
+        updates.power_updated_at = now;
+        changed.push("power");
+      }
+      if (changed.length === 0) {
+        return { ok: true, changed };
+      }
+
+      await usersDb.updateTable("users").set(updates).where("fid", "=", fid).execute();
+
+      if (changed.includes("chiefOfficeLv")) {
+        await changesDb
+          .insertInto("chief_office_changes")
+          .values({
+            fid,
+            old_chief_office_lv: current.chief_office_lv,
+            new_chief_office_lv: chiefOfficeLv!,
+            change_date: now,
+          })
+          .execute();
+      }
+      // Mirrors alliance_power_changes.record_change: skip the history row
+      // (but still apply the write above) when there's no prior power to
+      // diff against -- a "changed from nothing" row isn't a real delta.
+      if (changed.includes("power") && current.power !== null) {
+        await changesDb
+          .insertInto("power_changes")
+          .values({ fid, old_power: current.power, new_power: power!, change_date: now })
+          .execute();
+      }
+
+      return { ok: true, changed };
     },
   );
 
