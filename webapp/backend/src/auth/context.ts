@@ -20,7 +20,7 @@ import {
   type Tier,
 } from "./permissions.js";
 import type { SessionRecord } from "./session.js";
-import { getValidAccessToken } from "./session.js";
+import { getValidAccessToken, setActiveGuild } from "./session.js";
 import { fetchDiscordGuilds, type DiscordGuild } from "./oauth.js";
 
 export async function guildIdsWithAlliances(): Promise<Set<string>> {
@@ -34,6 +34,19 @@ export async function guildIdsWithAlliances(): Promise<Set<string>> {
   );
 }
 
+// Discord's /users/@me/guilds has an unusually tight rate limit, and
+// resolveAuthContext (below) is called on essentially every admin
+// request -- a single page load easily fires several of these in a row
+// for a Server-tier admin who hasn't picked a guild yet, which was
+// enough to get a real user 429'd (Discord /users/@me/guilds failed
+// (429), surfaced to them as "Couldn't load members"). This short cache
+// absorbs that burst; the real fix for the common case (only one
+// eligible guild -- nothing to actually pick) is resolveAuthContext
+// persisting it below so this path stops being hit at all after the
+// first call.
+const SELECTABLE_GUILDS_CACHE_TTL_MS = 30_000;
+const selectableGuildsCache = new Map<string, { guilds: DiscordGuild[]; at: number }>();
+
 /** The live, current guilds a Server-tier admin can pick from: guilds
  * they actually belong to (via their stored OAuth token) intersected
  * with guilds that have an alliance registered at all. Shared by
@@ -41,12 +54,18 @@ export async function guildIdsWithAlliances(): Promise<Set<string>> {
  * needsGuildSelection) and GET /api/auth/guilds (which needs id+name for
  * the picker UI) so the intersection logic lives in exactly one place. */
 export async function selectableGuilds(session: SessionRecord): Promise<DiscordGuild[]> {
+  const cached = selectableGuildsCache.get(session.id);
+  if (cached && Date.now() - cached.at < SELECTABLE_GUILDS_CACHE_TTL_MS) {
+    return cached.guilds;
+  }
   const [withAlliances, accessToken] = await Promise.all([
     guildIdsWithAlliances(),
     getValidAccessToken(session.id),
   ]);
   const userGuilds = await fetchDiscordGuilds(accessToken);
-  return userGuilds.filter((g) => withAlliances.has(g.id));
+  const guilds = userGuilds.filter((g) => withAlliances.has(g.id));
+  selectableGuildsCache.set(session.id, { guilds, at: Date.now() });
+  return guilds;
 }
 
 export interface AuthContext {
@@ -71,8 +90,9 @@ export async function resolveAuthContext(session: SessionRecord): Promise<AuthCo
 
   let needsGuildSelection = false;
   let availableGuildIds: string[] = [];
+  let activeGuildId = session.activeGuildId;
 
-  if (tier === TIER_SERVER && session.activeGuildId === null) {
+  if (tier === TIER_SERVER && activeGuildId === null) {
     // Server-tier has no adminserver rows -- its accessible alliances are
     // "whatever's on the current guild," and a web session has no guild
     // context handed to it for free the way a Discord interaction does.
@@ -81,7 +101,16 @@ export async function resolveAuthContext(session: SessionRecord): Promise<AuthCo
     // powers that picker -- see routes/auth.ts).
     const guilds = await selectableGuilds(session);
     availableGuildIds = guilds.map((g) => g.id);
-    needsGuildSelection = availableGuildIds.length > 1;
+    if (availableGuildIds.length === 1) {
+      // Nothing to actually pick between -- persist it now rather than
+      // leaving activeGuildId null forever, which would otherwise make
+      // this branch (a live, tightly-rate-limited Discord API call) run
+      // again on every single future request for this session.
+      activeGuildId = availableGuildIds[0]!;
+      await setActiveGuild(session.id, activeGuildId);
+    } else {
+      needsGuildSelection = availableGuildIds.length > 1;
+    }
   }
 
   return {
@@ -89,7 +118,7 @@ export async function resolveAuthContext(session: SessionRecord): Promise<AuthCo
     tier,
     isOwner: owner,
     isGlobal,
-    activeGuildId: session.activeGuildId,
+    activeGuildId,
     needsGuildSelection,
     availableGuildIds,
   };
