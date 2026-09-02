@@ -1256,6 +1256,21 @@ class NotificationSystem(commands.Cog):
 
                 time_text = f"{rounded_time} {time_unit}"
 
+                def apply_time_placeholder(text: str) -> str:
+                    """Substitute %t / {time} in admin-authored template text.
+                    At the "starts now" trigger (offset 0), "starts in 0
+                    minutes" reads wrong -- drop a preceding "in " if the
+                    template has one (the common "starts in %t" phrasing)
+                    so it reads "starts now" instead, then fill any
+                    remaining occurrence with "now" too."""
+                    if text is None:
+                        return text
+                    if rounded_time <= 0:
+                        text = re.sub(r"\bin\s+%t", "now", text)
+                        text = re.sub(r"\bin\s+\{time\}", "now", text, flags=re.IGNORECASE)
+                        return text.replace("%t", "now").replace("{time}", "now")
+                    return text.replace("%t", time_text).replace("{time}", time_text)
+
                 # Calculate event name, date, and time placeholders
                 event_name = event_type if event_type else "Event"
 
@@ -1293,8 +1308,7 @@ class NotificationSystem(commands.Cog):
 
                                 title = embed_data.get("title", "")
                                 if title and isinstance(title, str):
-                                    title = title.replace("%t", time_text)
-                                    title = title.replace("{time}", time_text)
+                                    title = apply_time_placeholder(title)
                                     title = title.replace("%n", event_name)
                                     title = title.replace("%e", event_time)
                                     title = title.replace("%d", event_date)
@@ -1307,8 +1321,7 @@ class NotificationSystem(commands.Cog):
                                 description = embed_data.get("description", "")
 
                                 if description and isinstance(description, str):
-                                    description = description.replace("%t", time_text)
-                                    description = description.replace("{time}", time_text)
+                                    description = apply_time_placeholder(description)
                                     description = description.replace("%n", event_name)
                                     description = description.replace("%e", event_time)
                                     description = description.replace("%d", event_date)
@@ -1332,8 +1345,7 @@ class NotificationSystem(commands.Cog):
 
                                 footer_text = embed_data.get("footer", "")
                                 if footer_text and isinstance(footer_text, str):
-                                    footer_text = footer_text.replace("%t", time_text)
-                                    footer_text = footer_text.replace("{time}", time_text)
+                                    footer_text = apply_time_placeholder(footer_text)
                                     footer_text = footer_text.replace("%n", event_name)
                                     footer_text = footer_text.replace("%e", event_time)
                                     footer_text = footer_text.replace("%d", event_date)
@@ -1345,8 +1357,7 @@ class NotificationSystem(commands.Cog):
 
                                 author_text = embed_data.get("author", "")
                                 if author_text and isinstance(author_text, str):
-                                    author_text = author_text.replace("%t", time_text)
-                                    author_text = author_text.replace("{time}", time_text)
+                                    author_text = apply_time_placeholder(author_text)
                                     author_text = author_text.replace("%n", event_name)
                                     author_text = author_text.replace("%e", event_time)
                                     author_text = author_text.replace("%d", event_date)
@@ -1366,8 +1377,7 @@ class NotificationSystem(commands.Cog):
                                                 mention_message = mention_message.replace("{tag}", mention_text)
                                             else:
                                                 mention_message = f"{mention_text} {mention_message}"
-                                            mention_message = mention_message.replace("%t", time_text)
-                                            mention_message = mention_message.replace("{time}", time_text)
+                                            mention_message = apply_time_placeholder(mention_message)
                                             mention_message = mention_message.replace("%n", event_name)
                                             mention_message = mention_message.replace("%e", event_time)
                                             mention_message = mention_message.replace("%d", event_date)
@@ -1427,10 +1437,7 @@ class NotificationSystem(commands.Cog):
                         if "@tag" in message or "{tag}" in message:
                             message = message.replace("@tag", mention_text)
                             message = message.replace("{tag}", mention_text)
-                        if "%t" in message:
-                            message = message.replace("%t", time_text)
-                        if "{time}" in message:
-                            message = message.replace("{time}", time_text)
+                        message = apply_time_placeholder(message)
                         if "%n" in message:
                             message = message.replace("%n", event_name)
                         if "%e" in message:
