@@ -1357,6 +1357,7 @@ class NotificationSystem(commands.Cog):
                                     embed.set_author(name=author_text)
 
                                 if embed.to_dict():
+                                    embed_already_sent = False
                                     if mention_text:
                                         mention_message = embed_data.get("mention_message", "")
                                         if mention_message:
@@ -1373,15 +1374,19 @@ class NotificationSystem(commands.Cog):
                                             mention_message = mention_message.replace("%i", event_emoji)
                                             msg = await channel.send(mention_message)
                                             sent_message_ids.append(msg.id)
-                                        else:  # Fallback: auto-generate from embed title
-                                            if embed.title:
-                                                mention_message = f"{mention_text} {embed.title}"
-                                            else:  # Fallback to bare mention if no title for some reason
-                                                mention_message = mention_text
-                                            msg = await channel.send(mention_message)
+                                        else:
+                                            # No custom ping text configured -- send the
+                                            # mention and the embed as ONE message. A
+                                            # separate plain-text message here would have
+                                            # nothing of its own to say except repeat the
+                                            # embed's own title back, which reads as the
+                                            # same announcement sent twice.
+                                            msg = await channel.send(content=mention_text, embed=embed)
                                             sent_message_ids.append(msg.id)
-                                    msg = await channel.send(embed=embed)
-                                    sent_message_ids.append(msg.id)
+                                            embed_already_sent = True
+                                    if not embed_already_sent:
+                                        msg = await channel.send(embed=embed)
+                                        sent_message_ids.append(msg.id)
                                 else:
                                     if rounded_time > 0:
                                         msg = await channel.send(
