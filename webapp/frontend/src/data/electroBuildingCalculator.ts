@@ -31,7 +31,7 @@ export function costForRange(buildingName: string, fromLevel: number, toLevel: n
   let total = EMPTY_TOTAL;
   for (let level = fromLevel + 1; level <= toLevel; level++) {
     const tier = getTierForLevel(building, level);
-    if (!tier) continue; // level outside the 31-45 dataset
+    if (!tier) continue; // level outside the 31-55 dataset
     total = addTotal(total, {
       cash: parseAmount(tier.cash),
       ammo: parseAmount(tier.ammo),
@@ -67,7 +67,7 @@ export interface ResolveResult {
  * closure of levels every building must reach -- including buildings the
  * user didn't ask about, if something on their wishlist needs them higher
  * than they currently are. Fixed-point iteration: levels only ever go up
- * and are capped at 45, so this always terminates.
+ * and are capped at MAX_LEVEL (55), so this always terminates.
  */
 export function resolveRequiredLevels(
   currentLevels: Record<string, number>,

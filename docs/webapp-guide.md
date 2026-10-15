@@ -128,6 +128,39 @@ currently active, non-expired codes with their notes. Redemption is always
 manual — see the [User Guide](user-guide.md#gift-codes) for why the bot can't
 redeem codes on your behalf.
 
+### Electro Building Calculator
+
+Sidebar → **Electro Building Calculator** (no login needed — it's pure game
+data, and nothing you enter is stored or sent anywhere). Plans the upgrades for the seven Electro buildings — Chief's Office,
+Guard / Biker / Marksman Academy, Dispatch Center, Command Center and
+Hospital — across levels **30 to 55** (Electro Levels 1–5).
+
+1. Set each building's **Current** level.
+2. Raise the **Goal** on whichever building(s) you're planning to upgrade.
+3. The page totals Cash, Ammo, Electricity, Gas, Electro Cores and build time
+   (no speedups). If a goal needs another building to be higher than it is
+   now, that building's upgrade is added automatically and tagged
+   **Required** (with "pulled up by …" showing why).
+
+Things worth knowing:
+
+- Electro Level 4 is building level 50 and Electro Level 5 is level 55; each
+  Electro Level is five upgrades. Levels 46–55 only exist once your State has
+  the Electro Level 5 update, which the game unlocks State by State (the
+  client checks that the State has been open at least 154 days), so the page
+  shows a note whenever a plan goes past 45.
+- Requirements come straight from the game's own building tables. For
+  levels 46–55: Chief's Office 46–50 needs Dispatch Center 45 and Marksman
+  Academy 45, and 51–55 needs Dispatch Center 50 and Biker Academy 50; the
+  Academies, Hospital and Dispatch Center need the Chief's Office at 50 (for
+  46–50) or 55 (for 51–55); the Command Center needs the Chief's Office and
+  Dispatch Center there too. Earlier levels still list buildings that aren't
+  one of the seven (for example Research Center 30) as a note, because their
+  cost isn't calculated here.
+- The Hospital only ever needs the Chief's Office. An earlier version of the
+  calculator also asked for the Dispatch Center, which the game doesn't
+  require.
+
 ## For admins
 
 Everything below requires some admin tier (Alliance, Server, Global, or
@@ -429,6 +462,7 @@ coordinate. What this page *does* give you:
 |---|---|
 | Your profile, alliance overview, leaderboards, attendance, member detail, calendar | Any signed-in member with a linked ID or alliance membership |
 | Gift codes (view) | Anyone signed in |
+| Electro Building Calculator | Anyone, even signed out |
 | Admin home, alliance members, channel setup | Alliance tier and up (for their assigned alliance(s)) |
 | Notifications, custom events, schedule boards | Server tier and up (guild-wide settings) |
 | Permissions, audit log, gift codes (manage), themes | Global tier and up |

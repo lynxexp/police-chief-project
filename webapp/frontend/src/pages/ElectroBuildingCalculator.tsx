@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import Layout from "../components/Layout";
-import { BUILDING_NAMES, MIN_LEVEL, MAX_LEVEL } from "../data/electroBuildingCosts";
+import { BUILDING_NAMES, MIN_LEVEL, MAX_LEVEL, LEGACY_MAX_LEVEL } from "../data/electroBuildingCosts";
 import { costForRange, resolveRequiredLevels, type ResourceTotal } from "../data/electroBuildingCalculator";
 import { Badge, Card, SectionHeading } from "../components/ui";
 
@@ -30,7 +30,7 @@ const RESOURCE_LABELS: { key: keyof ResourceTotal; label: string; icon: string }
 ];
 
 // Plain number inputs are genuinely hard to use on a phone for a small,
-// bounded range like this (30-45): the OS numeric keyboard covers most of
+// bounded range like this (30-55): the OS numeric keyboard covers most of
 // the screen just to nudge a value by one, and native spinner arrows are
 // tiny, inconsistent across mobile browsers, and easy to mis-tap. +/-
 // buttons sized for a thumb (44px, Apple's touch-target guidance) cover
@@ -101,8 +101,8 @@ function LevelInput({
 /** Member-facing, no alliance scoping -- building costs are a fixed game
  * mechanic, not alliance data, so this needs no backend route at all;
  * everything here runs client-side against the static tables in
- * data/buildingCosts.ts. See that file's header for the data's source
- * and the levels 30-45 (Electro tier) scope. */
+ * data/electroBuildingCosts.ts. See that file's header for the data's source
+ * and the levels 30-55 (Electro 1-5) scope. */
 export default function ElectroBuildingCalculator() {
   const [currentLevels, setCurrentLevels] = useState<Record<string, number>>(() =>
     Object.fromEntries(BUILDING_NAMES.map((n) => [n, MIN_LEVEL])),
@@ -178,6 +178,10 @@ export default function ElectroBuildingCalculator() {
     { cash: 0, ammo: 0, electricity: 0, gas: 0, electroCores: 0, seconds: 0 },
   );
 
+  // Levels past 45 (Electro 4 and 5) only exist for States that have the
+  // Electro Level 5 update unlocked -- warn when the plan depends on them.
+  const needsElectro5Update = BUILDING_NAMES.some((n) => requiredLevels[n] > LEGACY_MAX_LEVEL);
+
   const untrackedNotes = notes.filter((n) => !n.tracked && explicitGoalOrRequiredPulledThis(n.fromBuilding));
 
   function explicitGoalOrRequiredPulledThis(fromBuilding: string): boolean {
@@ -187,8 +191,9 @@ export default function ElectroBuildingCalculator() {
   return (
     <Layout title="Electro Building Calculator">
       <p className="text-sm text-ink-muted">
-        Covers the 7 Electro buildings at levels 30–45 — Chief's Office, Guard Academy, Biker Academy, Marksman
-        Academy, Dispatch Center, Command Center, and Hospital. Set each building's current level, then raise the{" "}
+        Covers the 7 Electro buildings at levels 30–55 (Electro Levels 1–5) — Chief's Office, Guard Academy, Biker
+        Academy, Marksman Academy, Dispatch Center, Command Center, and Hospital. Set each building's current level,
+        then raise the{" "}
         <strong className="text-ink-secondary">Goal</strong> for whichever one(s) you're planning to upgrade — if
         that requires another building to be higher than it currently is, this adds that building's own upgrade
         cost in automatically and calls it out below.
@@ -329,6 +334,20 @@ export default function ElectroBuildingCalculator() {
               </table>
             </div>
           </Card>
+
+          {needsElectro5Update && (
+            <Card>
+              <SectionHeading>Electro Level 4–5 (levels 46–55)</SectionHeading>
+              <p className="text-sm text-ink-muted">
+                Levels above 45 are part of the Electro Level 5 update, which unlocks State by State (the game client
+                checks that your State has been open at least 154 days). If your State doesn't have it yet, these
+                levels aren't available to you. Chief's Office 46–50 needs Dispatch Center 45 and Marksman Academy 45;
+                51–55 needs Dispatch Center 50 and Biker Academy 50. The Academies, Hospital and Dispatch Center need
+                the Chief's Office at 50 (for 46–50) or 55 (for 51–55), and the Command Center needs both the
+                Chief's Office and Dispatch Center there.
+              </p>
+            </Card>
+          )}
 
           {untrackedNotes.length > 0 && (
             <Card>
