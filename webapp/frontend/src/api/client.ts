@@ -1483,3 +1483,26 @@ export function getSchedulePreview(guildId: string, params: SchedulePreviewParam
   const query = qs.toString();
   return request(`/admin/guilds/${guildId}/schedule-preview${query ? `?${query}` : ""}`);
 }
+
+// ---------------------------------------------------------------------------
+// Electro Building Calculator (see routes/electroCalculator.ts) -- signed-in
+// only. The calculator page itself is public; these just let a signed-in
+// member resume with the "current" levels they last entered.
+// ---------------------------------------------------------------------------
+
+export interface ElectroCalculatorSave {
+  /** Building name -> current level, or null if this user never saved anything. */
+  currentLevels: Record<string, number> | null;
+  updatedAt: string | null;
+}
+
+export function getElectroCalculatorLevels(): Promise<ElectroCalculatorSave> {
+  return request<ElectroCalculatorSave>("/electro-calculator");
+}
+
+export function saveElectroCalculatorLevels(currentLevels: Record<string, number>): Promise<ElectroCalculatorSave> {
+  return request<ElectroCalculatorSave>("/electro-calculator", {
+    method: "PUT",
+    body: JSON.stringify({ currentLevels }),
+  });
+}

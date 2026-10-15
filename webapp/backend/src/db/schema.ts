@@ -649,8 +649,20 @@ export interface CalendarFeedTokensTable {
   created_at: string;
 }
 
+/** One row per signed-in Discord user holding the Electro Building
+ * Calculator's saved "current" levels, so they can resume later -- see
+ * routes/electroCalculator.ts. `current_levels` is a JSON object of
+ * building name -> level; always read through
+ * electroCalculator.ts's parseStoredElectroLevels, never trusted raw. */
+export interface ElectroCalculatorStateTable {
+  discord_id: Snowflake;
+  current_levels: string;
+  updated_at: string;
+}
+
 export interface WebappDb {
   sessions: SessionsTable;
   app_audit_log: AppAuditLogTable;
   calendar_feed_tokens: CalendarFeedTokensTable;
+  electro_calculator_state: ElectroCalculatorStateTable;
 }

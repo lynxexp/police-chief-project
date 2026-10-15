@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useOutletContext } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import Layout from "../components/Layout";
+import { getElectroCalculatorLevels, saveElectroCalculatorLevels, type AuthContext } from "../api/client";
 import { BUILDING_NAMES, MIN_LEVEL, MAX_LEVEL, LEGACY_MAX_LEVEL } from "../data/electroBuildingCosts";
 import { costForRange, resolveRequiredLevels, type ResourceTotal } from "../data/electroBuildingCalculator";
 import { Badge, Card, SectionHeading } from "../components/ui";
@@ -111,7 +114,113 @@ export default function ElectroBuildingCalculator() {
     Object.fromEntries(BUILDING_NAMES.map((n) => [n, MIN_LEVEL])),
   );
 
+  // --- Saved "current" levels (signed-in members only) ----------------------
+  // The page is public; when the visitor happens to be signed in, their
+  // current levels are loaded on arrival and saved automatically as they
+  // change, so they can come back and resume. Goals are deliberately not
+  // saved -- they're a per-visit planning choice that starts from the
+  // current levels each time. Signed-out visitors see no difference except
+  // a hint that signing in enables this.
+  const auth = useOutletContext<AuthContext | null | undefined>();
+  const signedIn = Boolean(auth);
+  // "pending": still loading what was saved. "ready": loaded (or nothing
+  // saved yet) and auto-save is on. "failed": couldn't load, so saving is
+  // switched off for this visit -- otherwise an auto-save of the defaults
+  // could overwrite levels that are really still sitting on the server.
+  const [saveStatus, setSaveStatus] = useState<"pending" | "ready" | "failed">("pending");
+  const [saveProgress, setSaveProgress] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const savedQuery = useQuery({
+    queryKey: ["electro-calculator", auth?.discordId],
+    queryFn: getElectroCalculatorLevels,
+    enabled: signedIn,
+    // Load once per visit: a refetch on window focus must never swap the
+    // page's levels out from under someone who is mid-edit.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+  });
+
+  const latestLevels = useRef(currentLevels);
+  latestLevels.current = currentLevels;
+  // True from the moment the user changes a current level until that
+  // change has been sent -- the only thing that ever triggers a save, so
+  // loading the saved levels (which also changes currentLevels) never
+  // writes anything back.
+  const unsavedChanges = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canSave = useRef(false);
+  canSave.current = signedIn && saveStatus === "ready";
+
+  useEffect(() => {
+    if (!signedIn || saveStatus !== "pending" || savedQuery.isFetching) return;
+    if (savedQuery.isError) {
+      setSaveStatus("failed");
+      return;
+    }
+    if (!savedQuery.isSuccess) return;
+    const saved = savedQuery.data.currentLevels;
+    if (saved) {
+      const merged = Object.fromEntries(
+        BUILDING_NAMES.map((n) => [n, Math.max(MIN_LEVEL, Math.min(MAX_LEVEL, saved[n] ?? MIN_LEVEL))]),
+      );
+      setCurrentLevels(merged);
+      // Goals start at (not below) the current levels, same as when a
+      // current level is raised by hand.
+      setGoalLevels(merged);
+      // What's on screen is now exactly what's saved; edits made while a
+      // failed load was being retried are replaced by it.
+      unsavedChanges.current = false;
+    }
+    setSaveStatus("ready");
+  }, [signedIn, saveStatus, savedQuery.isFetching, savedQuery.isError, savedQuery.isSuccess, savedQuery.data]);
+
+  const flushSave = useCallback(async () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (!unsavedChanges.current || !canSave.current) return;
+    // Cleared before sending, so an edit made while the request is in
+    // flight marks the page dirty again and gets its own save.
+    unsavedChanges.current = false;
+    setSaveProgress("saving");
+    try {
+      await saveElectroCalculatorLevels(latestLevels.current);
+      setSaveProgress(unsavedChanges.current ? "saving" : "saved");
+    } catch {
+      unsavedChanges.current = true;
+      setSaveProgress("error");
+    }
+  }, []);
+
+  // Save shortly after the last edit (the +/- buttons can fire many times
+  // in a row), and immediately if the tab is hidden or the page is left.
+  useEffect(() => {
+    if (!unsavedChanges.current || !canSave.current) return;
+    saveTimer.current = setTimeout(() => void flushSave(), 700);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [currentLevels, saveStatus, flushSave]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") void flushSave();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      void flushSave();
+    };
+  }, [flushSave]);
+
+  function retryLoadingSaved() {
+    setSaveStatus("pending");
+    void savedQuery.refetch();
+  }
+
   function setCurrent(name: string, level: number) {
+    unsavedChanges.current = true;
     setCurrentLevels((prev) => ({ ...prev, [name]: level }));
     // Keep the goal from silently sitting below the new current level --
     // nudge it up to match rather than leaving a goal that would compute
@@ -128,6 +237,7 @@ export default function ElectroBuildingCalculator() {
   // -- see LevelInput's onStep doc comment for why that distinction matters
   // under rapid taps.
   function stepCurrent(name: string, delta: number) {
+    unsavedChanges.current = true;
     setCurrentLevels((prev) => {
       const next = Math.max(MIN_LEVEL, Math.min(MAX_LEVEL, prev[name] + delta));
       setGoalLevels((prevGoal) => (prevGoal[name] < next ? { ...prevGoal, [name]: next } : prevGoal));
@@ -141,6 +251,11 @@ export default function ElectroBuildingCalculator() {
       return { ...prev, [name]: Math.max(next, currentLevels[name]) };
     });
   }
+
+  // Hide the level controls while a signed-in visitor's saved levels are
+  // still loading, so nothing can be edited (and then overwritten by the
+  // load, or worse, saved over it) in that window.
+  const showInputs = !(signedIn && saveStatus === "pending");
 
   const { requiredLevels, notes } = useMemo(
     () => resolveRequiredLevels(currentLevels, goalLevels),
@@ -202,6 +317,44 @@ export default function ElectroBuildingCalculator() {
       <Card>
         <SectionHeading>Your buildings</SectionHeading>
 
+        {!signedIn && (
+          <p className="mb-3 text-xs text-ink-faint">
+            <Link to="/login" className="text-ink-secondary underline">
+              Sign in with Discord
+            </Link>{" "}
+            to save your current levels and pick up where you left off.
+          </p>
+        )}
+        {signedIn && saveStatus === "pending" && (
+          <p className="text-sm text-ink-muted">Loading your saved levels…</p>
+        )}
+        {signedIn && saveStatus === "failed" && (
+          <p className="mb-3 text-xs text-ink-muted">
+            Couldn't load your saved levels, so changes won't be saved this visit.{" "}
+            <button type="button" onClick={retryLoadingSaved} className="text-ink-secondary underline">
+              Try again
+            </button>
+          </p>
+        )}
+        {signedIn && saveStatus === "ready" && (
+          <p className="mb-3 text-xs text-ink-faint" aria-live="polite">
+            Your current levels are saved to your account automatically
+            {saveProgress === "saving" && " — saving…"}
+            {saveProgress === "saved" && " — saved ✓"}
+            {saveProgress === "error" && (
+              <>
+                {" — "}
+                <span className="text-down-ink">couldn't save.</span>{" "}
+                <button type="button" onClick={() => void flushSave()} className="text-ink-secondary underline">
+                  Retry
+                </button>
+              </>
+            )}
+            .
+          </p>
+        )}
+
+        {showInputs && (<>
         {/* Below sm: a stepper control per building needs more width than a
             3-column table leaves it on a phone (confirmed -- the table
             version overflowed horizontally at 375px). Stacked cards give
@@ -255,6 +408,7 @@ export default function ElectroBuildingCalculator() {
             </tbody>
           </table>
         </div>
+        </>)}
       </Card>
 
       {perBuilding.length === 0 ? (

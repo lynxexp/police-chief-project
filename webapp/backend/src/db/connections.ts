@@ -159,6 +159,12 @@ export function initWebappSchema(): void {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_calendar_feed_tokens_token ON calendar_feed_tokens(token);
+
+    CREATE TABLE IF NOT EXISTS electro_calculator_state (
+      discord_id INTEGER PRIMARY KEY,
+      current_levels TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 }
 

@@ -131,7 +131,7 @@ redeem codes on your behalf.
 ### Electro Building Calculator
 
 Sidebar → **Electro Building Calculator** (no login needed — it's pure game
-data, and nothing you enter is stored or sent anywhere). Plans the upgrades for the seven Electro buildings — Chief's Office,
+data). Plans the upgrades for the seven Electro buildings — Chief's Office,
 Guard / Biker / Marksman Academy, Dispatch Center, Command Center and
 Hospital — across levels **30 to 55** (Electro Levels 1–5).
 
@@ -141,6 +141,19 @@ Hospital — across levels **30 to 55** (Electro Levels 1–5).
    (no speedups). If a goal needs another building to be higher than it is
    now, that building's upgrade is added automatically and tagged
    **Required** (with "pulled up by …" showing why).
+
+**Saving your levels.** If you're signed in with Discord, the page remembers
+your **Current** levels: they're loaded when you open it and saved to your
+account a moment after each change (you'll see "saving…" then "saved ✓"), so
+you can come back any time and pick up where you left off, from any device.
+Only the Current levels are saved — Goals start out matching them each visit,
+since they're just what you're planning right now. Signed out, nothing is
+stored or sent anywhere, and the page shows a link to sign in.
+
+If your saved levels can't be loaded (for example the dashboard is briefly
+unreachable), the page says so and **doesn't save anything that visit**, so a
+temporary hiccup can never overwrite what you saved earlier. Use **Try
+again** once it's back.
 
 Things worth knowing:
 
@@ -462,7 +475,7 @@ coordinate. What this page *does* give you:
 |---|---|
 | Your profile, alliance overview, leaderboards, attendance, member detail, calendar | Any signed-in member with a linked ID or alliance membership |
 | Gift codes (view) | Anyone signed in |
-| Electro Building Calculator | Anyone, even signed out |
+| Electro Building Calculator | Anyone, even signed out (saving your current levels needs a Discord sign-in) |
 | Admin home, alliance members, channel setup | Alliance tier and up (for their assigned alliance(s)) |
 | Notifications, custom events, schedule boards | Server tier and up (guild-wide settings) |
 | Permissions, audit log, gift codes (manage), themes | Global tier and up |
